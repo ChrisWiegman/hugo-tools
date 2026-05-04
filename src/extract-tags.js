@@ -231,4 +231,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { extractFrontmatter, parseListItems, generatePrefixes };
+module.exports = { extractFrontmatter, parseListItems, generatePrefixes, main };

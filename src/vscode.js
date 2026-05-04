@@ -7,7 +7,7 @@
  *   vscode
  *
  * Writes to <vscodeDir>/ (default .vscode/):
- *   tasks.json      — tasks for draft, add-tags, publish, pick-image
+ *   tasks.json      — tasks for draft, extract-tags, add-tags, publish, pick-image
  *   extensions.json — recommended extensions
  *   settings.json   — markdown editor settings
  *
@@ -17,42 +17,44 @@
 const fs = require('fs');
 const path = require('path');
 const { requireHugoSite, vscodeDir } = require('./config');
+const { main: extractTags } = require('./extract-tags');
 
 const TASKS = {
-  version: '2.0.0',
-  tasks: [
+  "version": "2.0.0",
+  "tasks": [
     {
-      label: 'Create Draft',
-      type: 'shell',
-      command: 'draft',
-      problemMatcher: [],
+      "label": "Create Draft",
+      "type": "shell",
+      "command": "npx draft",
+      "problemMatcher": []
     },
     {
-      label: 'Add Tags',
-      type: 'shell',
-      command: 'add-tags',
-      problemMatcher: [],
+      "label": "Add Tags",
+      "type": "shell",
+      "command": "npx add-tags",
+      "problemMatcher": []
     },
     {
-      label: 'Publish Draft (now)',
-      type: 'shell',
-      // publish prints "Published:\n  <path>" — grep extracts the path and opens it
-      command: 'output=$(publish "${relativeFile}" now); echo "$output"; newFile=$(echo "$output" | grep -oE \'content/[^ ]+\\.md\'); [ -n "$newFile" ] && code -r "${workspaceFolder}/$newFile"',
-      problemMatcher: [],
+      "label": "Publish Draft (now)",
+      "type": "shell",
+      "command": "output=$(npx publish \"${relativeFile}\" now); echo \"$output\"; newFile=$(echo \"$output\" | grep -oE 'content/[^ ]+\\.md'); [ -n \"$newFile\" ] && code -r \"${workspaceFolder}/$newFile\"",
+      "problemMatcher": []
     },
     {
-      label: 'Publish Draft (later)',
-      type: 'shell',
-      command: 'read -p "Publish date (YYYY-MM-DD): " d; output=$(publish "${relativeFile}" later "$d"); echo "$output"; newFile=$(echo "$output" | grep -oE \'content/[^ ]+\\.md\'); [ -n "$newFile" ] && code -r "${workspaceFolder}/$newFile"',
-      problemMatcher: [],
+      "label": "Publish Draft (later)",
+      "type": "shell",
+      "command": "read -p \"Publish date (YYYY-MM-DD): \" d; output=$(npx publish \"${relativeFile}\" later \"$d\"); echo \"$output\"; newFile=$(echo \"$output\" | grep -oE 'content/[^ ]+\\.md'); [ -n \"$newFile\" ] && code -r \"${workspaceFolder}/$newFile\"",
+      "problemMatcher": []
     },
     {
-      label: 'Pick Image',
-      type: 'shell',
-      command: 'pick-image',
-      problemMatcher: [],
-      presentation: { focus: true },
-    },
+      "label": "Pick Image",
+      "type": "shell",
+      "command": "npx pick-image",
+      "problemMatcher": [],
+      "presentation": {
+        "focus": true
+      }
+    }
   ],
 };
 
@@ -93,9 +95,11 @@ function main() {
   const dir = path.join(process.cwd(), vscodeDir);
   fs.mkdirSync(dir, { recursive: true });
 
-  writeIfAbsent(path.join(dir, 'tasks.json'),     JSON.stringify(TASKS,      null, 2) + '\n');
+  writeIfAbsent(path.join(dir, 'tasks.json'), JSON.stringify(TASKS, null, 2) + '\n');
   writeIfAbsent(path.join(dir, 'extensions.json'), JSON.stringify(EXTENSIONS, null, 2) + '\n');
-  writeIfAbsent(path.join(dir, 'settings.json'),   JSON.stringify(SETTINGS,   null, 2) + '\n');
+  writeIfAbsent(path.join(dir, 'settings.json'), JSON.stringify(SETTINGS, null, 2) + '\n');
+
+  extractTags();
 }
 
 main();
