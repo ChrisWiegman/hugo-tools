@@ -1,0 +1,49 @@
+{
+  "name": "@chriswiegman/hugo-tools",
+  "version": "0.1.0",
+  "description": "A set of tools to make blogging easier with Hugo.",
+  "keywords": [
+    "hugo",
+    "blogging",
+    "drafts",
+    "publishing"
+  ],
+  "homepage": "https://github.com/ChrisWiegman/hugo-tools#readme",
+  "bugs": {
+    "url": "https://github.com/ChrisWiegman/hugo-tools/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChrisWiegman/hugo-tools.git"
+  },
+  "license": "MIT",
+  "author": "Chris Wiegman <contact@chriswiegman.com>",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "src/",
+    "CHANGELOG.md"
+  ],
+  "bin": {
+    "config": "src/config-init.js",
+    "vscode": "src/vscode.js",
+    "extract-tags": "src/extract-tags.js",
+    "add-tags": "src/add-tags.js",
+    "draft": "src/draft.js",
+    "pick-image": "src/pick-image.js",
+    "publish": "src/publish.js",
+    "import-books": "src/book.mjs"
+  },
+  "scripts": {
+    "lint": "eslint src/",
+    "test": "node --test src/book.test.mjs src/publish.test.mjs src/extract-tags.test.mjs src/draft.test.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "changie": "^1.24.0",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0"
+  }
+}

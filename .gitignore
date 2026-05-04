@@ -1,0 +1,21 @@
+## OS Files
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN
+
+# OSX
+.DS_Store
+
+# Node JS modules
+node_modules
+.dev.vars
+.env*
+
+# IDE Settings
+.idea
+
+# Taxonomy Reports
+tag-canonical.json
+tag-map.json
