@@ -29,5 +29,8 @@ jobs:
                   node-version: "lts/*"
                   cache: "npm"
 
+            - name: Install dependencies
+              run: npm ci --include=optional
+
             - name: Run book script tests
               run: npm run lint
