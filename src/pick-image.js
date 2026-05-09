@@ -31,9 +31,9 @@ function insertImage(content, urlPath) {
     return appendMarkdown(content, urlPath);
   }
   return content.replace(
-    /^(images:)((?:\n  -[^\n]*)*)/m,
+    /^(images:)((?:\n {2}-[^\n]*)*)/m,
     (_, key, block) => {
-      const existing = block.split('\n').filter(line => /^  - \S/.test(line));
+      const existing = block.split('\n').filter(line => /^ {2}- \S/.test(line));
       return [key, ...existing, `  - ${urlPath}`].join('\n');
     }
   );

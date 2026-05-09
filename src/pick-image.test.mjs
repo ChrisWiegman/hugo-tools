@@ -90,7 +90,7 @@ test('insertImage: appends to existing multi-item images array', () => {
 test('insertImage: does not duplicate existing items', () => {
   const content = '---\nimages:\n  - /images/2026/01/a.jpg\n---\n';
   const result = insertImage(content, '/images/2026/05/b.jpg');
-  const count = (result.match(/  - \/images/g) || []).length;
+  const count = (result.match(/ {2}- \/images/g) || []).length;
   assert.equal(count, 2);
 });
 
