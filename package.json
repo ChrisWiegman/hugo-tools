@@ -1,6 +1,6 @@
 {
   "name": "@chriswiegman/hugo-tools",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "A set of tools to make blogging easier with Hugo.",
   "keywords": [
     "hugo",
