@@ -49,7 +49,7 @@ const TASKS = {
     {
       "label": "Pick Image",
       "type": "shell",
-      "command": "npx pick-image",
+      "command": "read -p 'Image path: ' img; npx pick-image \"$img\" \"${relativeFile}\"",
       "problemMatcher": [],
       "presentation": {
         "focus": true
