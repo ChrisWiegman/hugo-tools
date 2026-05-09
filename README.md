@@ -196,13 +196,34 @@ Requires `extract-tags` to have been run at least once.
 
 ### `pick-image`
 
-Lists images in your `imagesDir` for the current year/month, lets you pick one, and copies the Hugo-relative path to the clipboard.
+Moves an image into your `imagesDir` under the current year/month and inserts a reference into a Hugo content file.
 
 ```sh
-pick-image
+pick-image <image-file> [content-file]
 ```
 
-Clipboard support: macOS (`pbcopy`), Windows (`clip`), Linux (`xclip`, `xsel`, or `wl-copy` — whichever is available).
+**What it does:**
+
+- Moves `<image-file>` to `assets/images/YYYY/MM/<filename>` (creates the directory if needed)
+- Derives the Hugo URL path by stripping the `assets/` prefix (e.g. `/images/YYYY/MM/filename`)
+- If a `[content-file]` is given:
+  - Appends the path to the `images:` array in front matter when that field is present (replacing any placeholder `  -` entry)
+  - Otherwise appends a `![](path)` markdown tag to the end of the body
+- If no `[content-file]` is given, copies the URL path to the clipboard instead
+
+**Examples:**
+
+```sh
+# Move photo.jpg and insert into the currently open draft
+pick-image ~/Downloads/photo.jpg content/drafts/my-post.md
+
+# Move photo.jpg and copy the path to the clipboard
+pick-image ~/Downloads/photo.jpg
+```
+
+The VS Code "Pick Image" task prompts for the image path and automatically passes the currently open file as the content target — drag the image file into the terminal prompt to fill the path.
+
+Clipboard support (no-content-file mode): macOS (`pbcopy`), Windows (`clip`), Linux (`xclip`, `xsel`, or `wl-copy` — whichever is available).
 
 ---
 
