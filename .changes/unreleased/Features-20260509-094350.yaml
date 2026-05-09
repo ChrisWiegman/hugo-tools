@@ -1,0 +1,3 @@
+kind: Features
+body: Rework pick-image to move images into the dated assets directory and insert references directly into content files (frontmatter images array or markdown image tag)
+time: 2026-05-09T09:43:50.200092-05:00
