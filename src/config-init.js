@@ -12,18 +12,18 @@ const path = require('path');
 const { requireHugoSite, DEFAULTS } = require('./config');
 
 function main() {
-  requireHugoSite();
+	requireHugoSite();
 
-  const dest = path.join(process.cwd(), '.hugo-tools.json');
+	const dest = path.join(process.cwd(), '.hugo-tools.json');
 
-  if (fs.existsSync(dest)) {
-    process.stderr.write('Error: .hugo-tools.json already exists.\n');
-    process.exit(1);
-  }
+	if (fs.existsSync(dest)) {
+		process.stderr.write('Error: .hugo-tools.json already exists.\n');
+		process.exit(1);
+	}
 
-  fs.writeFileSync(dest, JSON.stringify(DEFAULTS, null, 2) + '\n', 'utf8');
-  console.log(`Created ${dest}`);
-  console.log('Edit the values to match your Hugo site layout.');
+	fs.writeFileSync(dest, JSON.stringify(DEFAULTS, null, 2) + '\n', 'utf8');
+	console.log(`Created ${dest}`);
+	console.log('Edit the values to match your Hugo site layout.');
 }
 
 main();
