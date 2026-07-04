@@ -2,11 +2,15 @@
 
 A collection of CLI tools for Hugo bloggers. Run them directly from the root of your Hugo site via `npx` or install globally.
 
+> **Never invoke these with `node path/to/script.js`.** Every command below is registered as a proper CLI via the `bin` field in `package.json`, so once installed you run it by name (`draft`, `publish`, ...) — see [Installation](#installation) for the three ways to do that.
+
 ## Requirements
 
 - Node.js 18 or later
 
 ## Installation
+
+Whichever route you pick, you're done as soon as you can run a bare command name (`draft`, `publish`, ...) — you should never need to reference a file path under `node_modules/` directly.
 
 **Run without installing (recommended):**
 
@@ -27,7 +31,14 @@ npx -p @chriswiegman/hugo-tools publish content/drafts/my-post.md now
 npm install --save-dev @chriswiegman/hugo-tools
 ```
 
-Then run commands via `npx` (no `-p` flag needed once installed) or add them as scripts in your `package.json`:
+Then run commands via `npx` (no `-p` flag needed once installed):
+
+```sh
+npx draft
+npx publish content/drafts/my-post.md now
+```
+
+...or add them as scripts in your `package.json` so `npm run publish` works too:
 
 ```json
 {
