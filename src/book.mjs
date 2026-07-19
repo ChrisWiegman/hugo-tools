@@ -3,7 +3,8 @@
  * Goodreads → Hugo Books importer (NO covers)
  * - Writes: content/books/<author-last-first>/<title-slug>.md
  * - Front matter:
- *   title, author, rating (0-5), finished ([YYYY-MM-DD...]), links { amazon, openlibrary, goodreads }
+ *   title, author, rating (0-5), finished ([YYYY-MM-DD...]), links { amazon, openlibrary, goodreads },
+ *   reference { isbn, asin }
  * - Review (if any) becomes body content
  * - finished uses Date Read; if blank, Date Added (only for Exclusive Shelf == "read")
  *
@@ -17,6 +18,14 @@
  *   (> 0). A Goodreads rating of 0 (unrated) never overwrites a rating already in the file,
  *   since you may have rated the book only in the markdown. Other fields are left untouched
  *   unless a rename occurs (in which case the title is also updated).
+ * - reference.isbn/asin are backfilled onto existing files that are missing them, but a
+ *   value already present in the file (e.g. entered by hand) is never overwritten.
+ *
+ * ASIN lookup:
+ * - Goodreads exports don't include an ASIN, so it's looked up per ISBN from Open Library,
+ *   then Google Books, and left blank if neither has one. Configure an Amazon Product
+ *   Advertising API key in .hugo-tools.json (amazonPaApi: { accessKey, secretKey, partnerTag })
+ *   to use it as a final fallback.
  *
  * Usage:
  *   node scripts/book.mjs path/to/goodreads.csv
@@ -28,6 +37,7 @@
 import fs from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { createHash, createHmac } from 'node:crypto';
 
 // -------------------- Config --------------------
 
@@ -44,6 +54,10 @@ try {
 } catch {} // eslint-disable-line no-empty
 
 const OUTPUT_ROOT = path.join(PROJECT_ROOT, _userConfig.booksDir ?? 'content/books');
+
+// Optional Amazon Product Advertising API credentials for ASIN lookup fallback.
+// Set via .hugo-tools.json: { "amazonPaApi": { "accessKey", "secretKey", "partnerTag" } }
+const AMAZON_PA_CONFIG = _userConfig.amazonPaApi ?? null;
 
 // -------------------- Utilities --------------------
 
@@ -218,6 +232,171 @@ function amazonSearchLink({ isbn13, isbn10, title, author }) {
 	return `https://www.amazon.com/s?k=${encodeURIComponent(query)}`;
 }
 
+// -------------------- ASIN lookup --------------------
+
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Open Library sometimes exposes an "amazon" identifier on an edition, which
+ * for Kindle editions is the ASIN.
+ */
+async function lookupAsinFromOpenLibrary(isbn, fetchImpl = fetch) {
+	if (!isbn) return '';
+
+	try {
+		const url = `https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(isbn)}&jscmd=data&format=json`;
+		const res = await fetchImpl(url);
+
+		if (!res.ok) return '';
+
+		const data = await res.json();
+		const amazon = data?.[`ISBN:${isbn}`]?.identifiers?.amazon;
+
+		return Array.isArray(amazon) && amazon[0] ? String(amazon[0]).trim().toUpperCase() : '';
+	} catch {
+		return '';
+	}
+}
+
+/**
+ * Google Books occasionally lists a non-ISBN "OTHER" industry identifier that
+ * matches the shape of an ASIN. Best-effort only — most volumes won't have one.
+ */
+async function lookupAsinFromGoogleBooks(isbn, fetchImpl = fetch) {
+	if (!isbn) return '';
+
+	try {
+		const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(isbn)}`;
+		const res = await fetchImpl(url);
+
+		if (!res.ok) return '';
+
+		const data = await res.json();
+		const identifiers = data?.items?.[0]?.volumeInfo?.industryIdentifiers ?? [];
+
+		for (const id of identifiers) {
+			if (id?.type !== 'OTHER') continue;
+
+			const bare = String(id.identifier || '').trim().toUpperCase().replace(/^[A-Z]+:/, '');
+
+			if (/^[A-Z0-9]{10}$/.test(bare) && bare !== isbn.toUpperCase()) return bare;
+		}
+
+		return '';
+	} catch {
+		return '';
+	}
+}
+
+function hmac(key, data) {
+	return createHmac('sha256', key).update(data, 'utf8').digest();
+}
+
+function sha256Hex(data) {
+	return createHash('sha256').update(data, 'utf8').digest('hex');
+}
+
+function amazonPaApiSignature({ secretKey, region, service, dateStamp, stringToSign }) {
+	const kDate = hmac(`AWS4${secretKey}`, dateStamp);
+	const kRegion = hmac(kDate, region);
+	const kService = hmac(kRegion, service);
+	const kSigning = hmac(kService, 'aws4_request');
+
+	return hmac(kSigning, stringToSign).toString('hex');
+}
+
+/**
+ * Official Amazon Product Advertising API v5 GetItems call, signed with SigV4.
+ * Only attempted when accessKey/secretKey/partnerTag are configured.
+ */
+async function lookupAsinFromAmazonPa(isbn, config, fetchImpl = fetch) {
+	if (!isbn || !config?.accessKey || !config?.secretKey || !config?.partnerTag) return '';
+
+	const host = config.host || 'webservices.amazon.com';
+	const region = config.region || 'us-east-1';
+	const marketplace = config.marketplace || 'www.amazon.com';
+	const service = 'ProductAdvertisingAPI';
+	const target = 'com.amazon.paapi5.v1.ProductAdvertisingAPIv1.GetItems';
+	const uri = '/paapi5/getitems';
+
+	const payload = JSON.stringify({
+		ItemIds: [isbn],
+		ItemIdType: 'ISBN',
+		Resources: ['ItemInfo.Title'],
+		PartnerTag: config.partnerTag,
+		PartnerType: 'Associates',
+		Marketplace: marketplace,
+	});
+
+	const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
+	const dateStamp = amzDate.slice(0, 8);
+	const canonicalHeaders =
+		`content-encoding:amz-1.0\ncontent-type:application/json; charset=utf-8\nhost:${host}\n` +
+		`x-amz-date:${amzDate}\nx-amz-target:${target}\n`;
+	const signedHeaders = 'content-encoding;content-type;host;x-amz-date;x-amz-target';
+	const canonicalRequest = `POST\n${uri}\n\n${canonicalHeaders}\n${signedHeaders}\n${sha256Hex(payload)}`;
+	const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+	const stringToSign =
+		`AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${sha256Hex(canonicalRequest)}`;
+	const signature = amazonPaApiSignature({ secretKey: config.secretKey, region, service, dateStamp, stringToSign });
+	const authorization =
+		`AWS4-HMAC-SHA256 Credential=${config.accessKey}/${credentialScope}, ` +
+		`SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+	try {
+		const res = await fetchImpl(`https://${host}${uri}`, {
+			method: 'POST',
+			headers: {
+				'content-encoding': 'amz-1.0',
+				'content-type': 'application/json; charset=utf-8',
+				host,
+				'x-amz-date': amzDate,
+				'x-amz-target': target,
+				authorization,
+			},
+			body: payload,
+		});
+
+		if (!res.ok) return '';
+
+		const data = await res.json();
+		const asin = data?.ItemsResult?.Items?.[0]?.ASIN;
+
+		return asin ? String(asin).trim().toUpperCase() : '';
+	} catch {
+		return '';
+	}
+}
+
+/**
+ * Look up an ASIN for an ISBN, trying free sources first (Open Library, then
+ * Google Books) and falling back to the Amazon Product Advertising API only
+ * when it's configured. Returns '' when no source has a match.
+ */
+async function lookupAsin(isbn, amazonPaConfig, cache, fetchImpl = fetch) {
+	if (!isbn) return '';
+
+	if (cache?.has(isbn)) return cache.get(isbn);
+
+	let asin = await lookupAsinFromOpenLibrary(isbn, fetchImpl);
+
+	if (!asin) {
+		await sleep(150);
+		asin = await lookupAsinFromGoogleBooks(isbn, fetchImpl);
+	}
+
+	if (!asin && amazonPaConfig) {
+		await sleep(150);
+		asin = await lookupAsinFromAmazonPa(isbn, amazonPaConfig, fetchImpl);
+	}
+
+	if (cache) cache.set(isbn, asin);
+
+	return asin;
+}
+
 /**
  * Use "Author l-f" (e.g. "Baldacci, David") → folder "baldacci-david"
  */
@@ -357,6 +536,73 @@ function updateRatingInFrontMatter(md, newRating) {
 	return md.replace(/^rating:.*$/m, `rating: ${newRating}`);
 }
 
+/**
+ * Extract the existing `reference: { isbn, asin }` values from a file's front matter.
+ * Returns { isbn: '', asin: '' } when the block (or either field) is absent.
+ */
+function parseExistingReference(md) {
+	const m = md.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+
+	if (!m) return { isbn: '', asin: '' };
+
+	const lines = m[1].split('\n');
+	let isbn = '';
+	let asin = '';
+
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].trim() !== 'reference:') continue;
+
+		for (let j = i + 1; j < lines.length; j++) {
+			const line = lines[j];
+
+			if (/^[A-Za-z0-9_-]+:/.test(line)) break; // new top-level key
+
+			const isbnMatch = line.match(/^\s*isbn:\s*"?([^"\n]*)"?\s*$/);
+
+			if (isbnMatch) isbn = isbnMatch[1].trim();
+
+			const asinMatch = line.match(/^\s*asin:\s*"?([^"\n]*)"?\s*$/);
+
+			if (asinMatch) asin = asinMatch[1].trim();
+		}
+		break;
+	}
+
+	return { isbn, asin };
+}
+
+/**
+ * Insert or replace the `reference:` block in front matter, leaving everything
+ * else untouched. Inserts a new block just before the closing `---` when none exists.
+ */
+function upsertReferenceInFrontMatter(md, { isbn, asin }) {
+	const block = [
+		'reference:',
+		`  isbn: "${escapeYAMLString(isbn)}"`,
+		`  asin: "${escapeYAMLString(asin)}"`,
+	];
+	const lines = md.split('\n');
+	const refIdx = lines.findIndex((l) => /^reference:\s*$/.test(l));
+
+	if (refIdx !== -1) {
+		let endIdx = refIdx + 1;
+
+		while (endIdx < lines.length && /^\s/.test(lines[endIdx])) {
+			endIdx++;
+		}
+		return [...lines.slice(0, refIdx), ...block, ...lines.slice(endIdx)].join('\n');
+	}
+
+	const closingIdx = lines.findIndex((l, i) => i > 0 && l.trim() === '---');
+
+	if (closingIdx === -1) {
+		console.warn('  WARNING: could not locate front matter to insert \'reference:\' block — file left unchanged');
+		return md;
+	}
+
+	return [...lines.slice(0, closingIdx), ...block, ...lines.slice(closingIdx)].join('\n');
+}
+
 // -------------------- Existing-file index --------------------
 
 /**
@@ -485,7 +731,7 @@ async function removeIfEmpty(dirPath) {
 
 // -------------------- Writing front matter --------------------
 
-function toFrontMatter({ title, author, rating, finished, links }) {
+function toFrontMatter({ title, author, rating, finished, links, reference }) {
 	const lines = [];
 
 	lines.push('---');
@@ -499,6 +745,11 @@ function toFrontMatter({ title, author, rating, finished, links }) {
 	lines.push(`  amazon: "${escapeYAMLString(links.amazon)}"`);
 	lines.push(`  openlibrary: "${escapeYAMLString(links.openlibrary)}"`);
 	lines.push(`  goodreads: "${escapeYAMLString(links.goodreads)}"`);
+
+	lines.push('reference:');
+	lines.push(`  isbn: "${escapeYAMLString(reference?.isbn ?? '')}"`);
+	lines.push(`  asin: "${escapeYAMLString(reference?.asin ?? '')}"`);
+
 	lines.push('---');
 	return lines.join('\n');
 }
@@ -662,11 +913,15 @@ async function main() {
 	let renamedFiles = 0;
 	let skippedUnchanged = 0;
 	let ratingsUpdated = 0;
+	let referencesUpdated = 0;
+
+	const asinCache = new Map();
 
 	for (const b of bookList) {
 		const authorDir = authorDirFromAuthorLF(b.authorLF);
 		const filename = `${slugify(b.title)}.md`;
 		const outPath = path.join(OUTPUT_ROOT, authorDir, filename);
+		const isbnBest = b.isbn13 || b.isbn10;
 
 		const existingPath = await findExistingFile(b, outPath, index);
 
@@ -687,7 +942,18 @@ async function main() {
 			// entered by hand there instead, so leave it alone rather than clobbering it with 0.
 			const hasRatingChange = b.rating > 0 && existingRating !== null && b.rating !== existingRating;
 
-			if (!titleChanged && !hasNewDates && !hasRatingChange) {
+			// Never clobber an isbn/asin already present in the file — only fill blanks.
+			const { isbn: existingIsbn, asin: existingAsin } = parseExistingReference(existingContent);
+			const finalIsbn = existingIsbn || isbnBest || '';
+			let finalAsin = existingAsin;
+
+			if (!finalAsin && finalIsbn) {
+				finalAsin = await lookupAsin(finalIsbn, AMAZON_PA_CONFIG, asinCache);
+			}
+
+			const hasReferenceChange = finalIsbn !== existingIsbn || finalAsin !== existingAsin;
+
+			if (!titleChanged && !hasNewDates && !hasRatingChange && !hasReferenceChange) {
 				skippedUnchanged++;
 				continue;
 			}
@@ -706,6 +972,15 @@ async function main() {
 				const rel = path.relative(OUTPUT_ROOT, existingPath);
 
 				console.log(`  RATING UPDATED: ${rel} (${existingRating} -> ${b.rating})`);
+			}
+
+			if (hasReferenceChange) {
+				patched = upsertReferenceInFrontMatter(patched, { isbn: finalIsbn, asin: finalAsin });
+				referencesUpdated++;
+
+				const rel = path.relative(OUTPUT_ROOT, existingPath);
+
+				console.log(`  REFERENCE UPDATED: ${rel} (isbn: "${finalIsbn}", asin: "${finalAsin}")`);
 			}
 
 			if (titleChanged) {
@@ -736,12 +1011,16 @@ async function main() {
 			createdNew++;
 
 			const finishedMerged = uniqSortedDates(b.finished);
-			const isbnBest = b.isbn13 || b.isbn10;
 
 			const links = {
 				amazon: amazonSearchLink({ isbn13: b.isbn13, isbn10: b.isbn10, title: b.title, author: b.author }),
 				openlibrary: openLibraryIsbnUrl(isbnBest),
 				goodreads: goodreadsBookUrl(b.bookId),
+			};
+
+			const reference = {
+				isbn: isbnBest,
+				asin: isbnBest ? await lookupAsin(isbnBest, AMAZON_PA_CONFIG, asinCache) : '',
 			};
 
 			const fm = toFrontMatter({
@@ -750,6 +1029,7 @@ async function main() {
 				rating: b.rating,
 				finished: finishedMerged,
 				links,
+				reference,
 			});
 
 			const bodyToWrite = b.review ? `\n\n${b.review}\n` : '\n';
@@ -785,6 +1065,7 @@ async function main() {
       `  Existing files updated:  ${mergedExisting}\n` +
       `  Files renamed:           ${renamedFiles}\n` +
       `  Ratings updated:         ${ratingsUpdated}\n` +
+      `  References updated:      ${referencesUpdated}\n` +
       `  Existing files skipped:  ${skippedUnchanged}\n` +
       `  Content output:          ${OUTPUT_ROOT}\n`,
 	);
@@ -818,9 +1099,15 @@ export {
 	replaceFinishedBlock,
 	updateTitleInFrontMatter,
 	updateRatingInFrontMatter,
+	parseExistingReference,
+	upsertReferenceInFrontMatter,
 	extractGoodreadsId,
 	extractFileIsbns,
 	toFrontMatter,
 	buildExistingIndex,
 	findExistingFile,
+	lookupAsinFromOpenLibrary,
+	lookupAsinFromGoogleBooks,
+	lookupAsinFromAmazonPa,
+	lookupAsin,
 };

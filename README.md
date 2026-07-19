@@ -249,10 +249,25 @@ import-books path/to/goodreads_library_export.csv
 **What it does:**
 
 - Creates `content/books/<author-slug>/<title-slug>.md` for each book on your "read" shelf
-- Front matter includes title, author, star rating, finish date(s), and links to Amazon, Open Library, and Goodreads
+- Front matter includes title, author, star rating, finish date(s), links to Amazon, Open Library, and Goodreads, and a `reference: { isbn, asin }` block
 - Any Goodreads review text becomes the file body
 - Safe to re-run: existing files are matched by Goodreads ID or ISBN, finish dates are merged, and unchanged files are skipped
 - If a book's title changed in Goodreads, the file is renamed automatically
+- `reference.isbn`/`reference.asin` are backfilled onto existing files that are missing them — a value already in the file (e.g. entered by hand) is never overwritten
+
+**ASIN lookup:** Goodreads exports don't include an ASIN, so it's looked up per ISBN from Open Library, then Google Books, and left blank (`""`) if neither has one. To use the official Amazon Product Advertising API as a final fallback, add credentials to `.hugo-tools.json`:
+
+```json
+{
+  "amazonPaApi": {
+    "accessKey": "",
+    "secretKey": "",
+    "partnerTag": ""
+  }
+}
+```
+
+This requires an approved Amazon Associates account with Product Advertising API access.
 
 **To export from Goodreads:** Account → My Books → Import and Export → Export Library.
 

@@ -21,11 +21,17 @@ import {
 	replaceFinishedBlock,
 	updateTitleInFrontMatter,
 	updateRatingInFrontMatter,
+	parseExistingReference,
+	upsertReferenceInFrontMatter,
 	extractGoodreadsId,
 	extractFileIsbns,
 	toFrontMatter,
 	buildExistingIndex,
 	findExistingFile,
+	lookupAsinFromOpenLibrary,
+	lookupAsinFromGoogleBooks,
+	lookupAsinFromAmazonPa,
+	lookupAsin,
 } from './book.mjs';
 
 // ---------------------------------------------------------------------------
@@ -49,8 +55,9 @@ function sampleMarkdown({
 	finished = ['2023-01-15'],
 	goodreadsId = '12345',
 	isbn13 = '9781234567890',
+	reference = null,
 } = {}) {
-	return [
+	const lines = [
 		'---',
 		`title: "${title}"`,
 		`author: "${author}"`,
@@ -61,9 +68,30 @@ function sampleMarkdown({
 		`  amazon: "https://www.amazon.com/s?k=${isbn13}"`,
 		`  openlibrary: "https://openlibrary.org/search?isbn=${isbn13}"`,
 		`  goodreads: "https://www.goodreads.com/book/show/${goodreadsId}"`,
-		'---',
-		'',
-	].join('\n');
+	];
+
+	if (reference) {
+		lines.push('reference:', `  isbn: "${reference.isbn ?? ''}"`, `  asin: "${reference.asin ?? ''}"`);
+	}
+
+	lines.push('---', '');
+	return lines.join('\n');
+}
+
+function fakeFetch(map) {
+	return async (url) => {
+		for (const [match, handler] of map) {
+			const matches = typeof match === 'string' ? url.includes(match) : match.test(url);
+
+			if (matches) return typeof handler === 'function' ? handler(url) : handler;
+		}
+
+		throw new Error(`fakeFetch: no handler for ${url}`);
+	};
+}
+
+function jsonResponse(body, ok = true) {
+	return { ok, json: async () => body };
 }
 
 // ---------------------------------------------------------------------------
@@ -550,6 +578,186 @@ test('updateRatingInFrontMatter: preserves all other front matter', () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseExistingReference
+// ---------------------------------------------------------------------------
+
+test('parseExistingReference: extracts isbn and asin from reference block', () => {
+	const md = sampleMarkdown({ reference: { isbn: '9781234567890', asin: 'B00ABCDEFG' } });
+	const result = parseExistingReference(md);
+
+	assert.deepEqual(result, { isbn: '9781234567890', asin: 'B00ABCDEFG' });
+});
+
+test('parseExistingReference: returns blanks when reference block is absent', () => {
+	const md = sampleMarkdown();
+	const result = parseExistingReference(md);
+
+	assert.deepEqual(result, { isbn: '', asin: '' });
+});
+
+test('parseExistingReference: returns blanks for fields present but empty', () => {
+	const md = sampleMarkdown({ reference: { isbn: '', asin: '' } });
+	const result = parseExistingReference(md);
+
+	assert.deepEqual(result, { isbn: '', asin: '' });
+});
+
+test('parseExistingReference: returns blanks for invalid front matter', () => {
+	assert.deepEqual(parseExistingReference('no front matter here'), { isbn: '', asin: '' });
+});
+
+// ---------------------------------------------------------------------------
+// upsertReferenceInFrontMatter
+// ---------------------------------------------------------------------------
+
+test('upsertReferenceInFrontMatter: inserts a new block when none exists', () => {
+	const md = sampleMarkdown();
+	const result = upsertReferenceInFrontMatter(md, { isbn: '9781234567890', asin: 'B00ABCDEFG' });
+
+	assert.ok(result.includes('reference:'));
+	assert.ok(result.includes('  isbn: "9781234567890"'));
+	assert.ok(result.includes('  asin: "B00ABCDEFG"'));
+	assert.ok(result.includes('title: "Test Book"'));
+});
+
+test('upsertReferenceInFrontMatter: replaces an existing block', () => {
+	const md = sampleMarkdown({ reference: { isbn: '9781234567890', asin: '' } });
+	const result = upsertReferenceInFrontMatter(md, { isbn: '9781234567890', asin: 'B00ABCDEFG' });
+
+	assert.equal((result.match(/reference:/g) || []).length, 1);
+	assert.ok(result.includes('  asin: "B00ABCDEFG"'));
+});
+
+test('upsertReferenceInFrontMatter: preserves all other front matter', () => {
+	const md = sampleMarkdown({ title: 'Keep Me', rating: 5 });
+	const result = upsertReferenceInFrontMatter(md, { isbn: '123', asin: '456' });
+
+	assert.ok(result.includes('title: "Keep Me"'));
+	assert.ok(result.includes('rating: 5'));
+	assert.ok(result.includes('goodreads:'));
+});
+
+// ---------------------------------------------------------------------------
+// ASIN lookup
+// ---------------------------------------------------------------------------
+
+test('lookupAsinFromOpenLibrary: extracts amazon identifier', async () => {
+	const fetchImpl = fakeFetch([
+		['openlibrary.org', jsonResponse({
+			'ISBN:9781234567890': { identifiers: { amazon: ['b00abcdefg'] } },
+		})],
+	]);
+
+	assert.equal(await lookupAsinFromOpenLibrary('9781234567890', fetchImpl), 'B00ABCDEFG');
+});
+
+test('lookupAsinFromOpenLibrary: returns empty string when no amazon identifier', async () => {
+	const fetchImpl = fakeFetch([
+		['openlibrary.org', jsonResponse({ 'ISBN:9781234567890': { identifiers: {} } })],
+	]);
+
+	assert.equal(await lookupAsinFromOpenLibrary('9781234567890', fetchImpl), '');
+});
+
+test('lookupAsinFromOpenLibrary: returns empty string on non-OK response', async () => {
+	const fetchImpl = fakeFetch([['openlibrary.org', jsonResponse({}, false)]]);
+
+	assert.equal(await lookupAsinFromOpenLibrary('9781234567890', fetchImpl), '');
+});
+
+test('lookupAsinFromOpenLibrary: returns empty string when fetch throws', async () => {
+	const fetchImpl = async () => {
+		throw new Error('network down');
+	};
+
+	assert.equal(await lookupAsinFromOpenLibrary('9781234567890', fetchImpl), '');
+});
+
+test('lookupAsinFromOpenLibrary: empty isbn returns empty string without fetching', async () => {
+	assert.equal(await lookupAsinFromOpenLibrary('', async () => {
+		throw new Error('should not be called');
+	}), '');
+});
+
+test('lookupAsinFromGoogleBooks: extracts ASIN-shaped OTHER identifier', async () => {
+	const fetchImpl = fakeFetch([
+		['googleapis.com', jsonResponse({
+			items: [{ volumeInfo: { industryIdentifiers: [
+				{ type: 'ISBN_13', identifier: '9781234567890' },
+				{ type: 'OTHER', identifier: 'B00ABCDEFG' },
+			] } }],
+		})],
+	]);
+
+	assert.equal(await lookupAsinFromGoogleBooks('9781234567890', fetchImpl), 'B00ABCDEFG');
+});
+
+test('lookupAsinFromGoogleBooks: returns empty string when no OTHER identifier matches', async () => {
+	const fetchImpl = fakeFetch([
+		['googleapis.com', jsonResponse({
+			items: [{ volumeInfo: { industryIdentifiers: [{ type: 'ISBN_10', identifier: '1234567890' }] } }],
+		})],
+	]);
+
+	assert.equal(await lookupAsinFromGoogleBooks('9781234567890', fetchImpl), '');
+});
+
+test('lookupAsinFromAmazonPa: returns empty string without config', async () => {
+	const fetchImpl = async () => {
+		throw new Error('should not be called');
+	};
+
+	assert.equal(await lookupAsinFromAmazonPa('9781234567890', null, fetchImpl), '');
+});
+
+test('lookupAsinFromAmazonPa: signs the request and returns the ASIN', async () => {
+	let seenAuth = '';
+	const fetchImpl = async (url, opts) => {
+		seenAuth = opts.headers.authorization;
+		return jsonResponse({ ItemsResult: { Items: [{ ASIN: 'b00abcdefg' }] } });
+	};
+	const config = { accessKey: 'AKIA...', secretKey: 'secret', partnerTag: 'tag-20' };
+
+	const result = await lookupAsinFromAmazonPa('9781234567890', config, fetchImpl);
+
+	assert.equal(result, 'B00ABCDEFG');
+	assert.ok(seenAuth.startsWith('AWS4-HMAC-SHA256 Credential=AKIA...'));
+});
+
+test('lookupAsin: falls back from Open Library to Google Books', async () => {
+	const fetchImpl = fakeFetch([
+		['openlibrary.org', jsonResponse({ 'ISBN:9781234567890': { identifiers: {} } })],
+		['googleapis.com', jsonResponse({
+			items: [{ volumeInfo: { industryIdentifiers: [{ type: 'OTHER', identifier: 'B00ABCDEFG' }] } }],
+		})],
+	]);
+
+	assert.equal(await lookupAsin('9781234567890', null, new Map(), fetchImpl), 'B00ABCDEFG');
+});
+
+test('lookupAsin: caches results per ISBN', async () => {
+	let calls = 0;
+	const fetchImpl = async () => {
+		calls++;
+		return jsonResponse({ 'ISBN:9781234567890': { identifiers: { amazon: ['B00ABCDEFG'] } } });
+	};
+	const cache = new Map();
+
+	await lookupAsin('9781234567890', null, cache, fetchImpl);
+	await lookupAsin('9781234567890', null, cache, fetchImpl);
+
+	assert.equal(calls, 1);
+});
+
+test('lookupAsin: empty isbn returns empty string without fetching', async () => {
+	const fetchImpl = async () => {
+		throw new Error('should not be called');
+	};
+
+	assert.equal(await lookupAsin('', null, new Map(), fetchImpl), '');
+});
+
+// ---------------------------------------------------------------------------
 // extractGoodreadsId
 // ---------------------------------------------------------------------------
 
@@ -639,6 +847,34 @@ test('toFrontMatter: escapes special chars in title and author', () => {
 
 	assert.ok(fm.includes('title: "Book \\"One\\""'));
 	assert.ok(fm.includes('author: "Author \\"A\\""'));
+});
+
+test('toFrontMatter: includes reference isbn/asin when provided', () => {
+	const fm = toFrontMatter({
+		title: 'Test Book',
+		author: 'John Doe',
+		rating: 4,
+		finished: [],
+		links: { amazon: '', openlibrary: '', goodreads: '' },
+		reference: { isbn: '9781234567890', asin: 'B00ABCDEFG' },
+	});
+
+	assert.ok(fm.includes('reference:'));
+	assert.ok(fm.includes('  isbn: "9781234567890"'));
+	assert.ok(fm.includes('  asin: "B00ABCDEFG"'));
+});
+
+test('toFrontMatter: reference fields default to blank when omitted', () => {
+	const fm = toFrontMatter({
+		title: 'Test Book',
+		author: 'John Doe',
+		rating: 4,
+		finished: [],
+		links: { amazon: '', openlibrary: '', goodreads: '' },
+	});
+
+	assert.ok(fm.includes('  isbn: ""'));
+	assert.ok(fm.includes('  asin: ""'));
 });
 
 // ---------------------------------------------------------------------------
