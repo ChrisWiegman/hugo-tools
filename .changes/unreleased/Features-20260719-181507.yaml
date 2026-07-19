@@ -1,5 +1,0 @@
-kind: Features
-body: 'book: populate reference.isbn and reference.asin in book front matter, backfilling
-  existing files and looking up ASIN via Open Library, Google Books, or a configured
-  Amazon Product Advertising API'
-time: 2026-07-19T18:15:07.346994-05:00

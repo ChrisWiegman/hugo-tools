@@ -1,5 +1,0 @@
-kind: Features
-body: 'book: add opt-in cover art fetching (--covers) — downloads cover images from
-  Open Library or Google Books by ISBN, saves them under coversDir, and sets the cover
-  front matter field'
-time: 2026-07-19T18:34:37.478303-05:00
