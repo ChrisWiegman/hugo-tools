@@ -69,7 +69,7 @@ const sharedRules = {
 	// suspicious
 	'no-async-promise-executor': 'error',
 	'no-compare-neg-zero': 'error',
-	'no-console': 'warn',
+	'no-console': 'off',
 	'no-constant-binary-expression': 'error',
 	'no-control-regex': 'error',
 	'no-debugger': 'error',
