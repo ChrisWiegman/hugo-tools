@@ -1,0 +1,4 @@
+kind: Bug Fixes
+body: 'book: strip a UTF-8 byte-order mark from the Goodreads CSV if present, so exports
+  saved with a BOM no longer fail column detection'
+time: 2026-07-19T18:47:15.661396-05:00

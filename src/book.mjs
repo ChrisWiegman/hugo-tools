@@ -21,6 +21,18 @@
  * - reference.isbn/asin are backfilled onto existing files that are missing them, but a
  *   value already present in the file (e.g. entered by hand) is never overwritten.
  *
+ * Re-reads:
+ * - Goodreads' CSV export only ever contains the *most recent* "Date Read" per book, even
+ *   when "Read Count" shows it was finished more than once. So: if you re-read a book,
+ *   the next export will carry the new completion date, and — since it differs from what's
+ *   already on file — it's automatically merged into `finished` as an additional date
+ *   (nothing is overwritten; dates only ever get added, never replaced or removed).
+ * - What the export can't give you is *earlier* read dates for a book already read more
+ *   than once before this tool started tracking it. When "Read Count" is higher than the
+ *   number of dates on file, the script prints a `NOTE:` line and leaves the file
+ *   untouched — add the missing date(s) to `finished` by hand. The note stops appearing
+ *   once the counts line up.
+ *
  * ASIN lookup:
  * - Goodreads exports don't include an ASIN, so it's looked up per ISBN from Open Library,
  *   then Google Books, and left blank if neither has one. Configure an Amazon Product
@@ -228,6 +240,24 @@ function uniqSortedDates(dates) {
 
 function keyFor(title, author) {
 	return `${title.trim().toLowerCase()}|${author.trim().toLowerCase()}`;
+}
+
+/**
+ * Strip a UTF-8 BOM if present. Some export tools/editors add one, and it would
+ * otherwise corrupt the first header name (e.g. "\uFEFFBook Id") and fail column detection.
+ */
+function stripBOM(text) {
+	return String(text ?? '').replace(/^\uFEFF/, '');
+}
+
+/**
+ * Goodreads' CSV export only ever includes the most recent "Date Read" per book, even
+ * when "Read Count" shows it was finished more than once — there's no way to recover
+ * earlier read dates from the export alone. Flag books where fewer dates are on record
+ * than the Goodreads read count, as a nudge to add the missing ones to `finished` by hand.
+ */
+function needsReReadDates(readCount, finishedCount) {
+	return Number.isFinite(readCount) && readCount > 1 && finishedCount < readCount;
 }
 
 function goodreadsBookUrl(bookId) {
@@ -946,7 +976,7 @@ async function main() {
 
 	if (!csvPath) usageAndExit();
 
-	const csvText = await fs.readFile(csvPath, 'utf8');
+	const csvText = stripBOM(await fs.readFile(csvPath, 'utf8'));
 	const rows = parseCSV(csvText);
 
 	if (rows.length < 2) {
@@ -1089,6 +1119,7 @@ async function main() {
 	let ratingsUpdated = 0;
 	let referencesUpdated = 0;
 	let coversFetched = 0;
+	let reReadsFlagged = 0;
 
 	const asinCache = new Map();
 
@@ -1141,6 +1172,18 @@ async function main() {
 			}
 
 			const hasCoverChange = finalCover !== existingCover;
+
+			// Independent of whether anything else changed — surfaced every run until resolved.
+			if (needsReReadDates(b.readCount, finishedMerged.length)) {
+				reReadsFlagged++;
+
+				const rel = path.relative(OUTPUT_ROOT, existingPath);
+
+				console.log(
+					`  NOTE: ${rel} shows ${b.readCount}x read on Goodreads but only ${finishedMerged.length} ` +
+					'date(s) on file — Goodreads only exports the latest read date, so add earlier ones to \'finished\' by hand.',
+				);
+			}
 
 			if (!titleChanged && !hasNewDates && !hasRatingChange && !hasReferenceChange && !hasCoverChange) {
 				skippedUnchanged++;
@@ -1209,6 +1252,15 @@ async function main() {
 			createdNew++;
 
 			const finishedMerged = uniqSortedDates(b.finished);
+
+			if (needsReReadDates(b.readCount, finishedMerged.length)) {
+				reReadsFlagged++;
+
+				console.log(
+					`  NOTE: "${b.title}" shows ${b.readCount}x read on Goodreads but only ${finishedMerged.length} ` +
+					'date(s) on file — Goodreads only exports the latest read date, so add earlier ones to \'finished\' by hand.',
+				);
+			}
 
 			const links = {
 				amazon: amazonSearchLink({ isbn13: b.isbn13, isbn10: b.isbn10, title: b.title, author: b.author }),
@@ -1280,6 +1332,7 @@ async function main() {
       `  References updated:      ${referencesUpdated}\n` +
       `  Covers fetched:          ${coversFetched}${withCovers ? '' : ' (pass --covers to fetch cover art)'}\n` +
       `  Existing files skipped:  ${skippedUnchanged}\n` +
+      `  Rereads needing dates:   ${reReadsFlagged}${reReadsFlagged ? ' (see NOTE lines above)' : ''}\n` +
       `  Content output:          ${OUTPUT_ROOT}\n`,
 	);
 }
@@ -1304,6 +1357,8 @@ export {
 	uniqSortedDates,
 	authorDirFromAuthorLF,
 	keyFor,
+	needsReReadDates,
+	stripBOM,
 	goodreadsBookUrl,
 	openLibraryIsbnUrl,
 	amazonSearchLink,

@@ -13,6 +13,8 @@ import {
 	uniqSortedDates,
 	authorDirFromAuthorLF,
 	keyFor,
+	needsReReadDates,
+	stripBOM,
 	goodreadsBookUrl,
 	openLibraryIsbnUrl,
 	amazonSearchLink,
@@ -325,6 +327,65 @@ test('keyFor: combines lowercased title and author with pipe', () => {
 
 test('keyFor: trims whitespace before combining', () => {
 	assert.equal(keyFor('  Test Book  ', '  John Doe  '), 'test book|john doe');
+});
+
+// ---------------------------------------------------------------------------
+// needsReReadDates
+// ---------------------------------------------------------------------------
+
+test('needsReReadDates: false when read once and one date on file', () => {
+	assert.equal(needsReReadDates(1, 1), false);
+});
+
+test('needsReReadDates: false when never read (readCount 0)', () => {
+	assert.equal(needsReReadDates(0, 0), false);
+});
+
+test('needsReReadDates: true when read twice but only one date on file', () => {
+	assert.equal(needsReReadDates(2, 1), true);
+});
+
+test('needsReReadDates: false once dates on file catch up to read count', () => {
+	assert.equal(needsReReadDates(2, 2), false);
+});
+
+test('needsReReadDates: false when dates on file exceed read count', () => {
+	// e.g. the user manually recorded more reads than Goodreads' counter shows
+	assert.equal(needsReReadDates(2, 3), false);
+});
+
+test('needsReReadDates: true for a book read many times with a single date on file', () => {
+	assert.equal(needsReReadDates(5, 1), true);
+});
+
+test('needsReReadDates: false for non-finite readCount', () => {
+	assert.equal(needsReReadDates(NaN, 0), false);
+	assert.equal(needsReReadDates(undefined, 0), false);
+});
+
+// ---------------------------------------------------------------------------
+// stripBOM
+// ---------------------------------------------------------------------------
+
+test('stripBOM: removes a leading UTF-8 BOM', () => {
+	assert.equal(stripBOM('﻿Book Id,Title'), 'Book Id,Title');
+});
+
+test('stripBOM: leaves text without a BOM unchanged', () => {
+	assert.equal(stripBOM('Book Id,Title'), 'Book Id,Title');
+});
+
+test('stripBOM: only strips a leading BOM, not one mid-string', () => {
+	assert.equal(stripBOM('Book Id﻿,Title'), 'Book Id﻿,Title');
+});
+
+test('stripBOM: empty string stays empty', () => {
+	assert.equal(stripBOM(''), '');
+});
+
+test('stripBOM: null/undefined coerce to empty string', () => {
+	assert.equal(stripBOM(null), '');
+	assert.equal(stripBOM(undefined), '');
 });
 
 // ---------------------------------------------------------------------------
@@ -1409,5 +1470,35 @@ test('integration: title-change rename via buildExistingIndex', async () => {
 		const newContent = await fs.readFile(newPath, 'utf8');
 
 		assert.ok(newContent.includes('title: "New Title"'));
+	});
+});
+
+test('integration: a re-read flagged by needsReReadDates is advisory only — no dates are fabricated', async () => {
+	await withTempDir(async (tmpDir) => {
+		// A book Goodreads says was read twice, but the export (and thus the file) only
+		// ever carries one date — the merge pipeline must not invent a second date.
+		const authorDir = path.join(tmpDir, 'doe-john');
+
+		await fs.mkdir(authorDir);
+		const filePath = path.join(authorDir, 'test-book.md');
+		const original = sampleMarkdown({ finished: ['2023-01-15'] });
+
+		await fs.writeFile(filePath, original);
+
+		const existingContent = await fs.readFile(filePath, 'utf8');
+		const { finished: existingFinished } = parseExistingMarkdown(existingContent);
+		// Goodreads' "Date Read" for this run is identical to what's already on file.
+		const csvFinished = ['2023-01-15'];
+		const finishedMerged = uniqSortedDates([...existingFinished, ...csvFinished]);
+
+		assert.deepEqual(finishedMerged, ['2023-01-15']);
+		assert.equal(needsReReadDates(2, finishedMerged.length), true);
+
+		// No new dates means the file is untouched by the merge itself.
+		const hasNewDates =
+			finishedMerged.length !== existingFinished.length ||
+			finishedMerged.some((d, i) => d !== existingFinished[i]);
+
+		assert.equal(hasNewDates, false);
 	});
 });

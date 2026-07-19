@@ -256,6 +256,14 @@ import-books path/to/goodreads_library_export.csv [--covers]
 - If a book's title changed in Goodreads, the file is renamed automatically
 - `reference.isbn`/`reference.asin` are backfilled onto existing files that are missing them — a value already in the file (e.g. entered by hand) is never overwritten
 
+**Re-reads:** Goodreads' CSV export only ever contains the *most recent* "Date Read" for a book, even when its "Read Count" shows it was finished more than once. So if you re-read a book, the next export will carry the new completion date and it's automatically added to `finished` — nothing is ever overwritten or removed, dates only accumulate. What the export can't give you is *earlier* read dates for a book you'd already read more than once before you started tracking it here. When "Read Count" is higher than the number of dates already on file, the import prints a line like:
+
+```
+NOTE: king-stephen/the-gunslinger.md shows 3x read on Goodreads but only 1 date(s) on file — Goodreads only exports the latest read date, so add earlier ones to 'finished' by hand.
+```
+
+This is informational only — the file isn't touched, and nothing else about the import is blocked. Add the missing date(s) to the file's `finished:` list yourself; the note stops appearing once the counts match. A run's summary also reports how many books were flagged this way (`Rereads needing dates`).
+
 **ASIN lookup:** Goodreads exports don't include an ASIN, so it's looked up per ISBN from Open Library, then Google Books, and left blank (`""`) if neither has one. To use the official Amazon Product Advertising API as a final fallback, add credentials to `.hugo-tools.json`:
 
 ```json

@@ -1,0 +1,5 @@
+kind: Features
+body: 'book: flag books where Goodreads'' "Read Count" exceeds the number of finished
+  dates on file, since the CSV export only ever carries the most recent read date
+  — a printed NOTE nudges you to add earlier read dates by hand'
+time: 2026-07-19T18:47:05.904254-05:00
