@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Goodreads → Hugo Books importer (NO covers)
+ * Goodreads → Hugo Books importer
  * - Writes: content/books/<author-last-first>/<title-slug>.md
  * - Front matter:
  *   title, author, rating (0-5), finished ([YYYY-MM-DD...]), links { amazon, openlibrary, goodreads },
- *   reference { isbn, asin }
+ *   reference { isbn, asin }, cover
  * - Review (if any) becomes body content
  * - finished uses Date Read; if blank, Date Added (only for Exclusive Shelf == "read")
  *
@@ -27,8 +27,18 @@
  *   Advertising API key in .hugo-tools.json (amazonPaApi: { accessKey, secretKey, partnerTag })
  *   to use it as a final fallback.
  *
+ * Cover art (opt-in):
+ * - Off by default — pass --covers to fetch and save cover art.
+ * - Looked up per ISBN from Open Library's cover API, then Google Books, and left blank if
+ *   neither has one.
+ * - Saved to <coversDir>/<author-slug>/<title-slug>.<ext> (coversDir defaults to
+ *   assets/images/books, configurable via .hugo-tools.json) and referenced from the
+ *   `cover` front matter field as a Hugo URL path.
+ * - Only backfills a blank `cover` field on existing files — a cover already set
+ *   (e.g. entered by hand) is never overwritten.
+ *
  * Usage:
- *   node scripts/book.mjs path/to/goodreads.csv
+ *   node scripts/book.mjs path/to/goodreads.csv [--covers]
  *
  * Notes:
  * - This script uses global fetch (Node 18+).
@@ -59,10 +69,13 @@ const OUTPUT_ROOT = path.join(PROJECT_ROOT, _userConfig.booksDir ?? 'content/boo
 // Set via .hugo-tools.json: { "amazonPaApi": { "accessKey", "secretKey", "partnerTag" } }
 const AMAZON_PA_CONFIG = _userConfig.amazonPaApi ?? null;
 
+// Project-relative directory cover art is saved under. Set via .hugo-tools.json: { "coversDir" }
+const COVERS_DIR = _userConfig.coversDir ?? 'assets/images/books';
+
 // -------------------- Utilities --------------------
 
 function usageAndExit() {
-	console.error('Usage: node scripts/book.mjs path/to/goodreads.csv');
+	console.error('Usage: node scripts/book.mjs path/to/goodreads.csv [--covers]');
 	process.exit(1);
 }
 
@@ -397,6 +410,127 @@ async function lookupAsin(isbn, amazonPaConfig, cache, fetchImpl = fetch) {
 	return asin;
 }
 
+// -------------------- Cover art (opt-in) --------------------
+
+const IMAGE_EXT_BY_CONTENT_TYPE = {
+	'image/jpeg': '.jpg',
+	'image/jpg': '.jpg',
+	'image/png': '.png',
+	'image/webp': '.webp',
+	'image/gif': '.gif',
+};
+
+function extFromContentType(contentType) {
+	const bare = String(contentType || '').split(';')[0].trim().toLowerCase();
+
+	return IMAGE_EXT_BY_CONTENT_TYPE[bare] || '.jpg';
+}
+
+/**
+ * Convert a project-relative asset path (e.g. "assets/images/books/king-stephen/it.jpg")
+ * into the Hugo-served URL path, mirroring pick-image's convention of stripping the
+ * `assets/` prefix.
+ */
+function coverUrlFromAssetPath(assetPath) {
+	const rel = assetPath.split(path.sep).join('/').replace(/^assets\//, '');
+
+	return `/${rel}`;
+}
+
+/**
+ * Open Library's cover API serves the image directly at a predictable URL keyed by
+ * ISBN. `default=false` makes it 404 instead of returning a placeholder when there's
+ * no cover, so a non-OK response reliably means "no cover here."
+ */
+async function fetchOpenLibraryCover(isbn, fetchImpl = fetch) {
+	if (!isbn) return null;
+
+	try {
+		const url = `https://covers.openlibrary.org/b/isbn/${encodeURIComponent(isbn)}-L.jpg?default=false`;
+		const res = await fetchImpl(url);
+
+		if (!res.ok) return null;
+
+		const contentType = res.headers?.get?.('content-type') || 'image/jpeg';
+
+		if (!contentType.startsWith('image/')) return null;
+
+		const buffer = Buffer.from(await res.arrayBuffer());
+
+		if (buffer.length === 0) return null;
+
+		return { buffer, contentType };
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Fallback cover source: Google Books' volume thumbnail, used when Open Library has none.
+ */
+async function fetchGoogleBooksCover(isbn, fetchImpl = fetch) {
+	if (!isbn) return null;
+
+	try {
+		const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(isbn)}`;
+		const res = await fetchImpl(url);
+
+		if (!res.ok) return null;
+
+		const data = await res.json();
+		const imageLinks = data?.items?.[0]?.volumeInfo?.imageLinks;
+		const thumbnail = imageLinks?.thumbnail || imageLinks?.smallThumbnail;
+
+		if (!thumbnail) return null;
+
+		const imgRes = await fetchImpl(thumbnail.replace(/^http:/, 'https:'));
+
+		if (!imgRes.ok) return null;
+
+		const contentType = imgRes.headers?.get?.('content-type') || 'image/jpeg';
+
+		if (!contentType.startsWith('image/')) return null;
+
+		const buffer = Buffer.from(await imgRes.arrayBuffer());
+
+		if (buffer.length === 0) return null;
+
+		return { buffer, contentType };
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Look up cover art for an ISBN, trying Open Library first and Google Books second.
+ * Returns null when neither source has one.
+ */
+async function fetchBookCover(isbn, fetchImpl = fetch) {
+	if (!isbn) return null;
+
+	const openLibrary = await fetchOpenLibraryCover(isbn, fetchImpl);
+
+	if (openLibrary) return openLibrary;
+
+	await sleep(150);
+	return fetchGoogleBooksCover(isbn, fetchImpl);
+}
+
+/**
+ * Write cover image bytes to `<coversDir>/<authorDir>/<slug><ext>` (relative to
+ * `projectRoot`) and return the Hugo URL path to store in front matter.
+ */
+async function saveCover(coversDir, authorDir, slug, cover, projectRoot = PROJECT_ROOT) {
+	const ext = extFromContentType(cover.contentType);
+	const relPath = path.join(coversDir, authorDir, `${slug}${ext}`);
+	const absPath = path.join(projectRoot, relPath);
+
+	await fs.mkdir(path.dirname(absPath), { recursive: true });
+	await fs.writeFile(absPath, cover.buffer);
+
+	return coverUrlFromAssetPath(relPath);
+}
+
 /**
  * Use "Author l-f" (e.g. "Baldacci, David") → folder "baldacci-david"
  */
@@ -603,6 +737,42 @@ function upsertReferenceInFrontMatter(md, { isbn, asin }) {
 	return [...lines.slice(0, closingIdx), ...block, ...lines.slice(closingIdx)].join('\n');
 }
 
+/**
+ * Extract the existing scalar `cover:` value from a file's front matter.
+ * Returns '' when the field is absent.
+ */
+function parseExistingCover(md) {
+	const m = md.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+
+	if (!m) return '';
+
+	const mm = m[1].match(/^cover:\s*"?([^"\n]*)"?\s*$/m);
+
+	return mm ? mm[1].trim() : '';
+}
+
+/**
+ * Insert or replace the scalar `cover:` field in front matter, leaving everything
+ * else untouched. Inserts a new line just before the closing `---` when absent.
+ */
+function upsertCoverInFrontMatter(md, coverPath) {
+	const line = `cover: "${escapeYAMLString(coverPath)}"`;
+
+	if (/^cover:.*$/m.test(md)) {
+		return md.replace(/^cover:.*$/m, line);
+	}
+
+	const lines = md.split('\n');
+	const closingIdx = lines.findIndex((l, i) => i > 0 && l.trim() === '---');
+
+	if (closingIdx === -1) {
+		console.warn('  WARNING: could not locate front matter to insert \'cover:\' field — file left unchanged');
+		return md;
+	}
+
+	return [...lines.slice(0, closingIdx), line, ...lines.slice(closingIdx)].join('\n');
+}
+
 // -------------------- Existing-file index --------------------
 
 /**
@@ -731,7 +901,7 @@ async function removeIfEmpty(dirPath) {
 
 // -------------------- Writing front matter --------------------
 
-function toFrontMatter({ title, author, rating, finished, links, reference }) {
+function toFrontMatter({ title, author, rating, finished, links, reference, cover }) {
 	const lines = [];
 
 	lines.push('---');
@@ -749,6 +919,8 @@ function toFrontMatter({ title, author, rating, finished, links, reference }) {
 	lines.push('reference:');
 	lines.push(`  isbn: "${escapeYAMLString(reference?.isbn ?? '')}"`);
 	lines.push(`  asin: "${escapeYAMLString(reference?.asin ?? '')}"`);
+
+	lines.push(`cover: "${escapeYAMLString(cover ?? '')}"`);
 
 	lines.push('---');
 	return lines.join('\n');
@@ -768,7 +940,9 @@ async function main() {
 		process.exit(1);
 	}
 
-	const csvPath = process.argv[2];
+	const argv = process.argv.slice(2);
+	const withCovers = argv.includes('--covers');
+	const csvPath = argv.find((a) => a && !a.startsWith('--'));
 
 	if (!csvPath) usageAndExit();
 
@@ -914,6 +1088,7 @@ async function main() {
 	let skippedUnchanged = 0;
 	let ratingsUpdated = 0;
 	let referencesUpdated = 0;
+	let coversFetched = 0;
 
 	const asinCache = new Map();
 
@@ -953,7 +1128,21 @@ async function main() {
 
 			const hasReferenceChange = finalIsbn !== existingIsbn || finalAsin !== existingAsin;
 
-			if (!titleChanged && !hasNewDates && !hasRatingChange && !hasReferenceChange) {
+			// Only fetch/backfill cover art when explicitly requested, and only into a blank field.
+			const existingCover = parseExistingCover(existingContent);
+			let finalCover = existingCover;
+
+			if (withCovers && !finalCover && finalIsbn) {
+				const coverResult = await fetchBookCover(finalIsbn);
+
+				if (coverResult) {
+					finalCover = await saveCover(COVERS_DIR, authorDir, slugify(b.title), coverResult);
+				}
+			}
+
+			const hasCoverChange = finalCover !== existingCover;
+
+			if (!titleChanged && !hasNewDates && !hasRatingChange && !hasReferenceChange && !hasCoverChange) {
 				skippedUnchanged++;
 				continue;
 			}
@@ -981,6 +1170,15 @@ async function main() {
 				const rel = path.relative(OUTPUT_ROOT, existingPath);
 
 				console.log(`  REFERENCE UPDATED: ${rel} (isbn: "${finalIsbn}", asin: "${finalAsin}")`);
+			}
+
+			if (hasCoverChange) {
+				patched = upsertCoverInFrontMatter(patched, finalCover);
+				coversFetched++;
+
+				const rel = path.relative(OUTPUT_ROOT, existingPath);
+
+				console.log(`  COVER ADDED: ${rel} (${finalCover})`);
 			}
 
 			if (titleChanged) {
@@ -1023,6 +1221,19 @@ async function main() {
 				asin: isbnBest ? await lookupAsin(isbnBest, AMAZON_PA_CONFIG, asinCache) : '',
 			};
 
+			let cover = '';
+
+			if (withCovers && isbnBest) {
+				const coverResult = await fetchBookCover(isbnBest);
+
+				if (coverResult) {
+					cover = await saveCover(COVERS_DIR, authorDir, slugify(b.title), coverResult);
+					coversFetched++;
+
+					console.log(`  COVER SAVED: ${cover}`);
+				}
+			}
+
 			const fm = toFrontMatter({
 				title: b.title,
 				author: b.author,
@@ -1030,6 +1241,7 @@ async function main() {
 				finished: finishedMerged,
 				links,
 				reference,
+				cover,
 			});
 
 			const bodyToWrite = b.review ? `\n\n${b.review}\n` : '\n';
@@ -1066,6 +1278,7 @@ async function main() {
       `  Files renamed:           ${renamedFiles}\n` +
       `  Ratings updated:         ${ratingsUpdated}\n` +
       `  References updated:      ${referencesUpdated}\n` +
+      `  Covers fetched:          ${coversFetched}${withCovers ? '' : ' (pass --covers to fetch cover art)'}\n` +
       `  Existing files skipped:  ${skippedUnchanged}\n` +
       `  Content output:          ${OUTPUT_ROOT}\n`,
 	);
@@ -1101,6 +1314,8 @@ export {
 	updateRatingInFrontMatter,
 	parseExistingReference,
 	upsertReferenceInFrontMatter,
+	parseExistingCover,
+	upsertCoverInFrontMatter,
 	extractGoodreadsId,
 	extractFileIsbns,
 	toFrontMatter,
@@ -1110,4 +1325,10 @@ export {
 	lookupAsinFromGoogleBooks,
 	lookupAsinFromAmazonPa,
 	lookupAsin,
+	extFromContentType,
+	coverUrlFromAssetPath,
+	fetchOpenLibraryCover,
+	fetchGoogleBooksCover,
+	fetchBookCover,
+	saveCover,
 };

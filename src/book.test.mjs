@@ -23,6 +23,8 @@ import {
 	updateRatingInFrontMatter,
 	parseExistingReference,
 	upsertReferenceInFrontMatter,
+	parseExistingCover,
+	upsertCoverInFrontMatter,
 	extractGoodreadsId,
 	extractFileIsbns,
 	toFrontMatter,
@@ -32,6 +34,12 @@ import {
 	lookupAsinFromGoogleBooks,
 	lookupAsinFromAmazonPa,
 	lookupAsin,
+	extFromContentType,
+	coverUrlFromAssetPath,
+	fetchOpenLibraryCover,
+	fetchGoogleBooksCover,
+	fetchBookCover,
+	saveCover,
 } from './book.mjs';
 
 // ---------------------------------------------------------------------------
@@ -92,6 +100,16 @@ function fakeFetch(map) {
 
 function jsonResponse(body, ok = true) {
 	return { ok, json: async () => body };
+}
+
+function imageResponse(bytes, contentType = 'image/jpeg', ok = true) {
+	const buf = Buffer.from(bytes);
+
+	return {
+		ok,
+		headers: { get: () => contentType },
+		arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -758,6 +776,212 @@ test('lookupAsin: empty isbn returns empty string without fetching', async () =>
 });
 
 // ---------------------------------------------------------------------------
+// Cover art (opt-in)
+// ---------------------------------------------------------------------------
+
+test('extFromContentType: maps known image types to extensions', () => {
+	assert.equal(extFromContentType('image/jpeg'), '.jpg');
+	assert.equal(extFromContentType('image/png'), '.png');
+	assert.equal(extFromContentType('image/webp'), '.webp');
+	assert.equal(extFromContentType('image/gif'), '.gif');
+});
+
+test('extFromContentType: strips charset/parameter suffix', () => {
+	assert.equal(extFromContentType('image/jpeg; charset=binary'), '.jpg');
+});
+
+test('extFromContentType: defaults to .jpg for unknown or missing types', () => {
+	assert.equal(extFromContentType('application/octet-stream'), '.jpg');
+	assert.equal(extFromContentType(''), '.jpg');
+	assert.equal(extFromContentType(undefined), '.jpg');
+});
+
+test('coverUrlFromAssetPath: strips the assets/ prefix and normalizes separators', () => {
+	assert.equal(
+		coverUrlFromAssetPath(path.join('assets', 'images', 'books', 'king-stephen', 'it.jpg')),
+		'/images/books/king-stephen/it.jpg',
+	);
+});
+
+test('fetchOpenLibraryCover: returns buffer and content type on success', async () => {
+	const fetchImpl = fakeFetch([
+		['covers.openlibrary.org', imageResponse([1, 2, 3], 'image/jpeg')],
+	]);
+
+	const result = await fetchOpenLibraryCover('9781234567890', fetchImpl);
+
+	assert.ok(result);
+	assert.equal(result.contentType, 'image/jpeg');
+	assert.deepEqual([...result.buffer], [1, 2, 3]);
+});
+
+test('fetchOpenLibraryCover: returns null on non-OK response (no cover)', async () => {
+	const fetchImpl = fakeFetch([
+		['covers.openlibrary.org', imageResponse([], 'image/jpeg', false)],
+	]);
+
+	assert.equal(await fetchOpenLibraryCover('9781234567890', fetchImpl), null);
+});
+
+test('fetchOpenLibraryCover: returns null when fetch throws', async () => {
+	const fetchImpl = async () => {
+		throw new Error('network down');
+	};
+
+	assert.equal(await fetchOpenLibraryCover('9781234567890', fetchImpl), null);
+});
+
+test('fetchOpenLibraryCover: empty isbn returns null without fetching', async () => {
+	assert.equal(await fetchOpenLibraryCover('', async () => {
+		throw new Error('should not be called');
+	}), null);
+});
+
+test('fetchGoogleBooksCover: fetches the volume thumbnail and returns image bytes', async () => {
+	const fetchImpl = fakeFetch([
+		['googleapis.com', jsonResponse({
+			items: [{ volumeInfo: { imageLinks: { thumbnail: 'http://books.google.com/thumb.jpg' } } }],
+		})],
+		['books.google.com', imageResponse([4, 5, 6], 'image/png')],
+	]);
+
+	const result = await fetchGoogleBooksCover('9781234567890', fetchImpl);
+
+	assert.ok(result);
+	assert.equal(result.contentType, 'image/png');
+	assert.deepEqual([...result.buffer], [4, 5, 6]);
+});
+
+test('fetchGoogleBooksCover: returns null when volume has no imageLinks', async () => {
+	const fetchImpl = fakeFetch([
+		['googleapis.com', jsonResponse({ items: [{ volumeInfo: {} }] })],
+	]);
+
+	assert.equal(await fetchGoogleBooksCover('9781234567890', fetchImpl), null);
+});
+
+test('fetchGoogleBooksCover: empty isbn returns null without fetching', async () => {
+	assert.equal(await fetchGoogleBooksCover('', async () => {
+		throw new Error('should not be called');
+	}), null);
+});
+
+test('fetchBookCover: prefers Open Library over Google Books', async () => {
+	const fetchImpl = fakeFetch([
+		['covers.openlibrary.org', imageResponse([1], 'image/jpeg')],
+		['googleapis.com', () => {
+			throw new Error('should not be called');
+		}],
+	]);
+
+	const result = await fetchBookCover('9781234567890', fetchImpl);
+
+	assert.ok(result);
+	assert.deepEqual([...result.buffer], [1]);
+});
+
+test('fetchBookCover: falls back to Google Books when Open Library has no cover', async () => {
+	const fetchImpl = fakeFetch([
+		['covers.openlibrary.org', imageResponse([], 'image/jpeg', false)],
+		['googleapis.com', jsonResponse({
+			items: [{ volumeInfo: { imageLinks: { thumbnail: 'http://books.google.com/thumb.jpg' } } }],
+		})],
+		['books.google.com', imageResponse([9], 'image/jpeg')],
+	]);
+
+	const result = await fetchBookCover('9781234567890', fetchImpl);
+
+	assert.ok(result);
+	assert.deepEqual([...result.buffer], [9]);
+});
+
+test('fetchBookCover: returns null when neither source has a cover', async () => {
+	const fetchImpl = fakeFetch([
+		['covers.openlibrary.org', imageResponse([], 'image/jpeg', false)],
+		['googleapis.com', jsonResponse({ items: [] })],
+	]);
+
+	assert.equal(await fetchBookCover('9781234567890', fetchImpl), null);
+});
+
+test('fetchBookCover: empty isbn returns null without fetching', async () => {
+	assert.equal(await fetchBookCover('', async () => {
+		throw new Error('should not be called');
+	}), null);
+});
+
+test('saveCover: writes image bytes under coversDir and returns the Hugo URL path', async () => {
+	await withTempDir(async (tmpDir) => {
+		const cover = { buffer: Buffer.from([1, 2, 3]), contentType: 'image/png' };
+		const url = await saveCover('assets/images/books', 'king-stephen', 'it', cover, tmpDir);
+
+		assert.equal(url, '/images/books/king-stephen/it.png');
+
+		const written = await fs.readFile(path.join(tmpDir, 'assets', 'images', 'books', 'king-stephen', 'it.png'));
+
+		assert.deepEqual([...written], [1, 2, 3]);
+	});
+});
+
+test('saveCover: creates intermediate directories as needed', async () => {
+	await withTempDir(async (tmpDir) => {
+		const cover = { buffer: Buffer.from([7]), contentType: 'image/jpeg' };
+
+		await saveCover('assets/images/books', 'doe-jane', 'a-title', cover, tmpDir);
+
+		const exists = await fs.access(path.join(tmpDir, 'assets', 'images', 'books', 'doe-jane', 'a-title.jpg'))
+			.then(() => true)
+			.catch(() => false);
+
+		assert.ok(exists);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseExistingCover / upsertCoverInFrontMatter
+// ---------------------------------------------------------------------------
+
+test('parseExistingCover: extracts the cover value when present', () => {
+	const md = ['---', 'title: "Test"', 'cover: "/images/books/king-stephen/it.jpg"', '---', ''].join('\n');
+
+	assert.equal(parseExistingCover(md), '/images/books/king-stephen/it.jpg');
+});
+
+test('parseExistingCover: returns empty string when the field is absent', () => {
+	assert.equal(parseExistingCover(sampleMarkdown()), '');
+});
+
+test('parseExistingCover: returns empty string for invalid front matter', () => {
+	assert.equal(parseExistingCover('no front matter here'), '');
+});
+
+test('upsertCoverInFrontMatter: inserts the field when absent', () => {
+	const md = sampleMarkdown();
+	const result = upsertCoverInFrontMatter(md, '/images/books/king-stephen/it.jpg');
+
+	assert.ok(result.includes('cover: "/images/books/king-stephen/it.jpg"'));
+	assert.ok(result.includes('title: "Test Book"'));
+});
+
+test('upsertCoverInFrontMatter: replaces an existing cover field without duplicating it', () => {
+	const md = ['---', 'title: "Test"', 'cover: "/old.jpg"', '---', ''].join('\n');
+	const result = upsertCoverInFrontMatter(md, '/new.jpg');
+
+	assert.equal((result.match(/^cover:/gm) || []).length, 1);
+	assert.ok(result.includes('cover: "/new.jpg"'));
+	assert.ok(!result.includes('/old.jpg'));
+});
+
+test('upsertCoverInFrontMatter: preserves all other front matter', () => {
+	const md = sampleMarkdown({ title: 'Keep Me', rating: 5 });
+	const result = upsertCoverInFrontMatter(md, '/cover.jpg');
+
+	assert.ok(result.includes('title: "Keep Me"'));
+	assert.ok(result.includes('rating: 5'));
+	assert.ok(result.includes('goodreads:'));
+});
+
+// ---------------------------------------------------------------------------
 // extractGoodreadsId
 // ---------------------------------------------------------------------------
 
@@ -875,6 +1099,31 @@ test('toFrontMatter: reference fields default to blank when omitted', () => {
 
 	assert.ok(fm.includes('  isbn: ""'));
 	assert.ok(fm.includes('  asin: ""'));
+});
+
+test('toFrontMatter: includes cover field when provided', () => {
+	const fm = toFrontMatter({
+		title: 'Test Book',
+		author: 'John Doe',
+		rating: 4,
+		finished: [],
+		links: { amazon: '', openlibrary: '', goodreads: '' },
+		cover: '/images/books/doe-john/test-book.jpg',
+	});
+
+	assert.ok(fm.includes('cover: "/images/books/doe-john/test-book.jpg"'));
+});
+
+test('toFrontMatter: cover defaults to blank when omitted', () => {
+	const fm = toFrontMatter({
+		title: 'Test Book',
+		author: 'John Doe',
+		rating: 4,
+		finished: [],
+		links: { amazon: '', openlibrary: '', goodreads: '' },
+	});
+
+	assert.ok(fm.includes('cover: ""'));
 });
 
 // ---------------------------------------------------------------------------

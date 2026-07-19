@@ -78,6 +78,7 @@ Or create `.hugo-tools.json` manually:
   "notesDir": "content/notes",
   "booksDir": "content/books",
   "imagesDir": "assets/images",
+  "coversDir": "assets/images/books",
   "vscodeDir": ".vscode"
 }
 ```
@@ -243,13 +244,13 @@ Clipboard support (no-content-file mode): macOS (`pbcopy`), Windows (`clip`), Li
 Imports books from a [Goodreads CSV export](https://www.goodreads.com/review/import) into Hugo content files under `booksDir`.
 
 ```sh
-import-books path/to/goodreads_library_export.csv
+import-books path/to/goodreads_library_export.csv [--covers]
 ```
 
 **What it does:**
 
 - Creates `content/books/<author-slug>/<title-slug>.md` for each book on your "read" shelf
-- Front matter includes title, author, star rating, finish date(s), links to Amazon, Open Library, and Goodreads, and a `reference: { isbn, asin }` block
+- Front matter includes title, author, star rating, finish date(s), links to Amazon, Open Library, and Goodreads, a `reference: { isbn, asin }` block, and a `cover` field
 - Any Goodreads review text becomes the file body
 - Safe to re-run: existing files are matched by Goodreads ID or ISBN, finish dates are merged, and unchanged files are skipped
 - If a book's title changed in Goodreads, the file is renamed automatically
@@ -268,6 +269,8 @@ import-books path/to/goodreads_library_export.csv
 ```
 
 This requires an approved Amazon Associates account with Product Advertising API access.
+
+**Cover art:** off by default — pass `--covers` to fetch it. When enabled, each book's ISBN is looked up against Open Library's cover API, then Google Books, and left blank if neither has one. Downloaded images are saved to `coversDir` (default `assets/images/books/<author-slug>/<title-slug>.<ext>`) and the `cover` field is set to the corresponding Hugo URL path (e.g. `/images/books/king-stephen/it.jpg`). On existing files, only a blank `cover` field is backfilled — a cover already set (e.g. entered by hand) is never overwritten, and no network requests are made at all unless `--covers` is passed.
 
 **To export from Goodreads:** Account → My Books → Import and Export → Export Library.
 
