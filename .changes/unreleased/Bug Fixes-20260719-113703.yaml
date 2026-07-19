@@ -1,5 +1,0 @@
-kind: Bug Fixes
-body: 'book: update rating from Goodreads only when it differs and Goodreads has an
-  actual rating, so manually-set ratings in markdown aren''t overwritten by an unrated
-  (0) Goodreads entry'
-time: 2026-07-19T11:37:03.261894-05:00
