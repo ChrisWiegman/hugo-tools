@@ -12,7 +12,10 @@
  * - Existing files are matched by Goodreads Book ID first, then ISBN, then title slug.
  * - When a match is found at a different path (title changed in Goodreads), the file is
  *   renamed to the new slug and the title in front matter is updated automatically.
- * - For an existing book file, finished dates are merged; other fields are left untouched
+ * - For an existing book file, finished dates are merged and the rating is updated when the
+ *   Goodreads rating differs from the file's rating — but only when Goodreads has a rating
+ *   (> 0). A Goodreads rating of 0 (unrated) never overwrites a rating already in the file,
+ *   since you may have rated the book only in the markdown. Other fields are left untouched
  *   unless a rename occurs (in which case the title is also updated).
  *
  * Usage:
@@ -244,11 +247,13 @@ function authorDirFromAuthorLF(authorLF) {
  *     - "YYYY-MM-DD"
  *     - "YYYY-MM-DD"
  * - finished: "YYYY-MM-DD"   (legacy scalar; included as one date)
+ *
+ * Also extracts the existing `rating:` value (or null if absent/unparseable).
  */
 function parseExistingMarkdown(md) {
 	const m = md.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
 
-	if (!m) return { finished: [] };
+	if (!m) return { finished: [], rating: null };
 
 	const fm = m[1];
 	const lines = fm.split('\n');
@@ -280,7 +285,18 @@ function parseExistingMarkdown(md) {
 		}
 	}
 
-	return { finished: uniqSortedDates(finished) };
+	let rating = null;
+
+	for (const line of lines) {
+		const mm = line.match(/^rating:\s*(\d+)\s*$/);
+
+		if (mm) {
+			rating = Number(mm[1]);
+			break;
+		}
+	}
+
+	return { finished: uniqSortedDates(finished), rating };
 }
 
 async function fileExists(p) {
@@ -332,6 +348,13 @@ function replaceFinishedBlock(md, newFinished) {
  */
 function updateTitleInFrontMatter(md, newTitle) {
 	return md.replace(/^title:.*$/m, `title: "${escapeYAMLString(newTitle)}"`);
+}
+
+/**
+ * Update the rating field in front matter, leaving everything else untouched.
+ */
+function updateRatingInFrontMatter(md, newRating) {
+	return md.replace(/^rating:.*$/m, `rating: ${newRating}`);
 }
 
 // -------------------- Existing-file index --------------------
@@ -638,6 +661,7 @@ async function main() {
 	let mergedExisting = 0;
 	let renamedFiles = 0;
 	let skippedUnchanged = 0;
+	let ratingsUpdated = 0;
 
 	for (const b of bookList) {
 		const authorDir = authorDirFromAuthorLF(b.authorLF);
@@ -651,14 +675,19 @@ async function main() {
 
 			// Read the existing file
 			const existingContent = await fs.readFile(existingPath, 'utf8');
-			const { finished: existingFinished } = parseExistingMarkdown(existingContent);
+			const { finished: existingFinished, rating: existingRating } = parseExistingMarkdown(existingContent);
 			const finishedMerged = uniqSortedDates([...existingFinished, ...b.finished]);
 
 			const hasNewDates =
 				finishedMerged.length !== existingFinished.length ||
         finishedMerged.some((d, i) => d !== existingFinished[i]);
 
-			if (!titleChanged && !hasNewDates) {
+			// Only let Goodreads override the file's rating when Goodreads actually has one (> 0).
+			// A rating of 0 usually means "not rated on Goodreads" — the file may carry a rating
+			// entered by hand there instead, so leave it alone rather than clobbering it with 0.
+			const hasRatingChange = b.rating > 0 && existingRating !== null && b.rating !== existingRating;
+
+			if (!titleChanged && !hasNewDates && !hasRatingChange) {
 				skippedUnchanged++;
 				continue;
 			}
@@ -668,6 +697,15 @@ async function main() {
 
 			if (hasNewDates) {
 				patched = replaceFinishedBlock(patched, finishedMerged);
+			}
+
+			if (hasRatingChange) {
+				patched = updateRatingInFrontMatter(patched, b.rating);
+				ratingsUpdated++;
+
+				const rel = path.relative(OUTPUT_ROOT, existingPath);
+
+				console.log(`  RATING UPDATED: ${rel} (${existingRating} -> ${b.rating})`);
 			}
 
 			if (titleChanged) {
@@ -746,6 +784,7 @@ async function main() {
       `  New files created:       ${createdNew}\n` +
       `  Existing files updated:  ${mergedExisting}\n` +
       `  Files renamed:           ${renamedFiles}\n` +
+      `  Ratings updated:         ${ratingsUpdated}\n` +
       `  Existing files skipped:  ${skippedUnchanged}\n` +
       `  Content output:          ${OUTPUT_ROOT}\n`,
 	);
@@ -778,6 +817,7 @@ export {
 	parseExistingMarkdown,
 	replaceFinishedBlock,
 	updateTitleInFrontMatter,
+	updateRatingInFrontMatter,
 	extractGoodreadsId,
 	extractFileIsbns,
 	toFrontMatter,

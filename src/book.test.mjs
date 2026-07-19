@@ -20,6 +20,7 @@ import {
 	parseExistingMarkdown,
 	replaceFinishedBlock,
 	updateTitleInFrontMatter,
+	updateRatingInFrontMatter,
 	extractGoodreadsId,
 	extractFileIsbns,
 	toFrontMatter,
@@ -433,6 +434,26 @@ test('parseExistingMarkdown: returns empty array for invalid front matter', () =
 	assert.deepEqual(finished, []);
 });
 
+test('parseExistingMarkdown: extracts rating', () => {
+	const md = sampleMarkdown({ rating: 5 });
+	const { rating } = parseExistingMarkdown(md);
+
+	assert.equal(rating, 5);
+});
+
+test('parseExistingMarkdown: returns null rating when field is absent', () => {
+	const md = ['---', 'title: "Test"', 'finished:', '  - "2023-01-15"', '---', ''].join('\n');
+	const { rating } = parseExistingMarkdown(md);
+
+	assert.equal(rating, null);
+});
+
+test('parseExistingMarkdown: returns null rating for invalid front matter', () => {
+	const { rating } = parseExistingMarkdown('no front matter here');
+
+	assert.equal(rating, null);
+});
+
 // ---------------------------------------------------------------------------
 // replaceFinishedBlock
 // ---------------------------------------------------------------------------
@@ -505,6 +526,26 @@ test('updateTitleInFrontMatter: preserves all other front matter', () => {
 	const result = updateTitleInFrontMatter(md, 'New');
 
 	assert.ok(result.includes('rating: 3'));
+	assert.ok(result.includes('goodreads:'));
+});
+
+// ---------------------------------------------------------------------------
+// updateRatingInFrontMatter
+// ---------------------------------------------------------------------------
+
+test('updateRatingInFrontMatter: replaces rating line', () => {
+	const md = sampleMarkdown({ rating: 3 });
+	const result = updateRatingInFrontMatter(md, 5);
+
+	assert.ok(result.includes('rating: 5'));
+	assert.ok(!result.includes('rating: 3'));
+});
+
+test('updateRatingInFrontMatter: preserves all other front matter', () => {
+	const md = sampleMarkdown({ title: 'Keep Me', rating: 2 });
+	const result = updateRatingInFrontMatter(md, 4);
+
+	assert.ok(result.includes('title: "Keep Me"'));
 	assert.ok(result.includes('goodreads:'));
 });
 
