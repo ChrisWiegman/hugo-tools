@@ -1,3 +1,0 @@
-kind: Bug Fixes
-body: Standardized note threshold to 350 words and made sure it will take "Personal" posts longer than that as actual posts.
-time: 2026-08-09T10:03:25.685458-05:00
