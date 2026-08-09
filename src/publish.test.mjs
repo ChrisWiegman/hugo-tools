@@ -304,9 +304,16 @@ test('processContent: non-personal category with tags → post', () => {
 	assert.equal(typeDir, 'posts');
 });
 
-test('processContent: long post (>=200 words) with categories → post', () => {
-	const text = makeDraft({ title: 'Long Post', categories: ['Technology'], tags: ['Go'], body: words(200) });
+test('processContent: long post (>=350 words) with categories → post', () => {
+	const text = makeDraft({ title: 'Long Post', categories: ['Technology'], tags: ['Go'], body: words(350) });
 	const { typeDir } = processContent(text, 'now', 'long-post', NOW_STAMP, '', DRAFT_PATH);
+
+	assert.equal(typeDir, 'posts');
+});
+
+test('processContent: long personal post (>=350 words) with categories and tags → post', () => {
+	const text = makeDraft({ title: 'Long Personal Post', categories: ['Personal'], tags: ['Music'], body: words(350) });
+	const { typeDir } = processContent(text, 'now', 'long-personal-post', NOW_STAMP, '', DRAFT_PATH);
 
 	assert.equal(typeDir, 'posts');
 });
@@ -438,12 +445,12 @@ test('processContent: handles draft with no frontmatter as note', () => {
 // processContent — error cases
 // ---------------------------------------------------------------------------
 
-test('processContent: throws for 200+ word draft with no real categories', () => {
-	const text = makeDraft({ body: words(200) });
+test('processContent: throws for 350+ word draft with no real categories', () => {
+	const text = makeDraft({ body: words(350) });
 
 	assert.throws(
 		() => processContent(text, 'now', 'long-post', NOW_STAMP, '', DRAFT_PATH),
-		/notes must be under 200 words/,
+		/notes must be under 350 words/,
 	);
 });
 

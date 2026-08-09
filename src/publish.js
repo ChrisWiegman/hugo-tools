@@ -268,7 +268,7 @@ function processContent(text, mode, baseName, dateStamp, publishStamp, draftPath
 	const wordCount = trimmedBody ? trimmedBody.split(/\s+/).length : 0;
 	const hasAnyCategory = extractListValues(fm, 'category').length > 0 ||
     extractListValues(fm, 'categories').length > 0;
-	const isNote = (hasCategory(fm, 'personal') || !hasAnyCategory) && wordCount < 200;
+	const isNote = (hasCategory(fm, 'personal') || !hasAnyCategory) && wordCount < 350;
 
 	fm = removeKey(fm, 'publishDate');
 
@@ -320,10 +320,8 @@ function processContent(text, mode, baseName, dateStamp, publishStamp, draftPath
 	}
 
 	if (!isNote) {
-		const looksLikeNote = hasCategory(fm, 'personal') || !hasAnyCategory;
-
-		if (looksLikeNote) {
-			throw new Error(`Error: post has ${wordCount} words — notes must be under 200 words. Add categories and tags to publish as a post instead.`);
+		if (!hasAnyCategory) {
+			throw new Error(`Error: post has ${wordCount} words — notes must be under 350 words. Add categories and tags to publish as a post instead.`);
 		}
 
 		if (!rawTitle) {
