@@ -795,7 +795,7 @@ test('lookupAsinFromAmazonPa: signs the request and returns the ASIN', async () 
 	let seenAuth = '';
 	const fetchImpl = async (url, opts) => {
 		seenAuth = opts.headers.authorization;
-		return jsonResponse({ ItemsResult: { Items: [{ ASIN: 'b00abcdefg' }] } });
+		return jsonResponse({ SearchResult: { Items: [{ ASIN: 'b00abcdefg' }] } });
 	};
 	const config = { accessKey: 'AKIA...', secretKey: 'secret', partnerTag: 'tag-20' };
 
@@ -803,6 +803,22 @@ test('lookupAsinFromAmazonPa: signs the request and returns the ASIN', async () 
 
 	assert.equal(result, 'B00ABCDEFG');
 	assert.ok(seenAuth.startsWith('AWS4-HMAC-SHA256 Credential=AKIA...'));
+});
+
+test('lookupAsinFromAmazonPa: searches the Books index by ISBN via SearchItems', async () => {
+	let seen;
+	const fetchImpl = async (url, opts) => {
+		seen = { url, target: opts.headers['x-amz-target'], body: JSON.parse(opts.body) };
+		return jsonResponse({ SearchResult: { Items: [] } });
+	};
+	const config = { accessKey: 'AKIA...', secretKey: 'secret', partnerTag: 'tag-20' };
+
+	assert.equal(await lookupAsinFromAmazonPa('9781234567890', config, fetchImpl), '');
+	assert.equal(seen.url, 'https://webservices.amazon.com/paapi5/searchitems');
+	assert.equal(seen.target, 'com.amazon.paapi5.v1.ProductAdvertisingAPIv1.SearchItems');
+	assert.equal(seen.body.Keywords, '9781234567890');
+	assert.equal(seen.body.SearchIndex, 'Books');
+	assert.equal(seen.body.ItemIds, undefined);
 });
 
 test('lookupAsin: falls back from Open Library to Google Books', async () => {

@@ -352,8 +352,10 @@ function amazonPaApiSignature({ secretKey, region, service, dateStamp, stringToS
 }
 
 /**
- * Official Amazon Product Advertising API v5 GetItems call, signed with SigV4.
- * Only attempted when accessKey/secretKey/partnerTag are configured.
+ * Official Amazon Product Advertising API v5 SearchItems call, signed with SigV4.
+ * GetItems only accepts ASINs as item IDs, so the ISBN is used as a keyword search
+ * within the Books index instead. Only attempted when accessKey/secretKey/partnerTag
+ * are configured.
  */
 async function lookupAsinFromAmazonPa(isbn, config, fetchImpl = fetch) {
 	if (!isbn || !config?.accessKey || !config?.secretKey || !config?.partnerTag) return '';
@@ -362,12 +364,13 @@ async function lookupAsinFromAmazonPa(isbn, config, fetchImpl = fetch) {
 	const region = config.region || 'us-east-1';
 	const marketplace = config.marketplace || 'www.amazon.com';
 	const service = 'ProductAdvertisingAPI';
-	const target = 'com.amazon.paapi5.v1.ProductAdvertisingAPIv1.GetItems';
-	const uri = '/paapi5/getitems';
+	const target = 'com.amazon.paapi5.v1.ProductAdvertisingAPIv1.SearchItems';
+	const uri = '/paapi5/searchitems';
 
 	const payload = JSON.stringify({
-		ItemIds: [isbn],
-		ItemIdType: 'ISBN',
+		Keywords: isbn,
+		SearchIndex: 'Books',
+		ItemCount: 1,
 		Resources: ['ItemInfo.Title'],
 		PartnerTag: config.partnerTag,
 		PartnerType: 'Associates',
@@ -406,7 +409,7 @@ async function lookupAsinFromAmazonPa(isbn, config, fetchImpl = fetch) {
 		if (!res.ok) return '';
 
 		const data = await res.json();
-		const asin = data?.ItemsResult?.Items?.[0]?.ASIN;
+		const asin = data?.SearchResult?.Items?.[0]?.ASIN;
 
 		return asin ? String(asin).trim().toUpperCase() : '';
 	} catch {
