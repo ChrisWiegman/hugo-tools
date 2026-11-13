@@ -57,9 +57,10 @@
  */
 
 import fs from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { createHash, createHmac } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 // -------------------- Config --------------------
 
@@ -1337,11 +1338,23 @@ async function main() {
 	);
 }
 
-// Only run main() when executed directly as a script (not imported by tests)
-const isMain =
-	path.resolve(new URL(import.meta.url).pathname) === path.resolve(process.argv[1] ?? '');
+/**
+ * True when this module is the process entry point. Both sides are resolved through
+ * realpath so the check holds when invoked via an npm bin symlink (npx, global installs,
+ * node_modules/.bin) and when the path contains URL-encoded characters such as spaces.
+ */
+function isMainModule(metaUrl, argv1) {
+	if (!argv1) return false;
 
-if (isMain) {
+	try {
+		return realpathSync(fileURLToPath(metaUrl)) === realpathSync(path.resolve(argv1));
+	} catch {
+		return false;
+	}
+}
+
+// Only run main() when executed directly as a script (not imported by tests)
+if (isMainModule(import.meta.url, process.argv[1])) {
 	main().catch((err) => {
 		console.error(err);
 		process.exit(1);
@@ -1349,6 +1362,7 @@ if (isMain) {
 }
 
 export {
+	isMainModule,
 	slugify,
 	cleanIsbn,
 	toISODate,

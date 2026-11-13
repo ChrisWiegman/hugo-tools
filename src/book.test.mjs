@@ -3,8 +3,10 @@ import { test } from 'node:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
+	isMainModule,
 	slugify,
 	cleanIsbn,
 	toISODate,
@@ -1501,4 +1503,49 @@ test('integration: a re-read flagged by needsReReadDates is advisory only — no
 
 		assert.equal(hasNewDates, false);
 	});
+});
+
+// ---------------------------------------------------------------------------
+// isMainModule
+// ---------------------------------------------------------------------------
+
+test('isMainModule: true when argv[1] is the module path', async () => {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'book-main-'));
+	const file = path.join(dir, 'book.mjs');
+
+	await fs.writeFile(file, '');
+	assert.equal(isMainModule(pathToFileURL(file).href, file), true);
+	await fs.rm(dir, { recursive: true });
+});
+
+test('isMainModule: true when argv[1] is a symlink to the module (npm bin)', async () => {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'book-main-'));
+	const file = path.join(dir, 'book.mjs');
+	const link = path.join(dir, 'import-books');
+
+	await fs.writeFile(file, '');
+	await fs.symlink(file, link);
+	assert.equal(isMainModule(pathToFileURL(file).href, link), true);
+	await fs.rm(dir, { recursive: true });
+});
+
+test('isMainModule: true when the path contains a space', async () => {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'book main '));
+	const file = path.join(dir, 'book.mjs');
+
+	await fs.writeFile(file, '');
+	assert.equal(isMainModule(pathToFileURL(file).href, file), true);
+	await fs.rm(dir, { recursive: true });
+});
+
+test('isMainModule: false for a different file or missing argv[1]', async () => {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'book-main-'));
+	const file = path.join(dir, 'book.mjs');
+	const other = path.join(dir, 'other.mjs');
+
+	await fs.writeFile(file, '');
+	await fs.writeFile(other, '');
+	assert.equal(isMainModule(pathToFileURL(file).href, other), false);
+	assert.equal(isMainModule(pathToFileURL(file).href, undefined), false);
+	await fs.rm(dir, { recursive: true });
 });

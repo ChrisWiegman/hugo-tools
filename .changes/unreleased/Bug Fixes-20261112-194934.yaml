@@ -1,0 +1,3 @@
+kind: Bug Fixes
+body: Fixed import-books silently doing nothing when run through npx, a global install, or any path containing spaces.
+time: 2026-11-12T19:49:34.551427-06:00
