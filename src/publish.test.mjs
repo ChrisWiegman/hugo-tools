@@ -13,6 +13,7 @@ const {
 	extractListValues,
 	hasCategory,
 	parseTitleFromFm,
+	yamlQuote,
 	titleFromBasename,
 	slugify,
 	stripQuotes,
@@ -541,4 +542,30 @@ test('formatChicagoTime: returns HH:MM in 24-hour format', () => {
 
 test('formatChicagoTime: pads minutes to two digits', () => {
 	assert.equal(formatChicagoTime('2026-05-04T08:05:00-05:00'), '08:05');
+});
+
+// ---------------------------------------------------------------------------
+// Title quoting
+// ---------------------------------------------------------------------------
+
+test('parseTitleFromFm: unescapes double-quoted titles', () => {
+	assert.equal(parseTitleFromFm('title: "Why \\"AI\\" is hype"'), 'Why "AI" is hype');
+});
+
+test('parseTitleFromFm: unescapes single-quoted titles', () => {
+	assert.equal(parseTitleFromFm('title: \'It\'\'s here\''), 'It\'s here');
+});
+
+test('yamlQuote: escapes backslashes and double quotes', () => {
+	assert.equal(yamlQuote('a "b" \\c'), '"a \\"b\\" \\\\c"');
+});
+
+test('processContent: writes valid YAML for titles containing double quotes', () => {
+	for (const titleLine of ['title: \'Why "AI" is hype\'', 'title: "Why \\"AI\\" is hype"', 'title: Why "AI" is hype']) {
+		const text = `---\n${titleLine}\ncategories:\n  - Tech\ntags:\n  - ai\n---\n` + 'word '.repeat(400);
+		const { updated, slug } = processContent(text, 'now', 'x', '2026-01-01T08:00:00-06:00', '', 'd');
+
+		assert.match(updated, /^title: "Why \\"AI\\" is hype"$/m);
+		assert.equal(slug, 'why-ai-is-hype');
+	}
 });

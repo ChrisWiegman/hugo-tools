@@ -1,0 +1,3 @@
+kind: Bug Fixes
+body: Fixed publish writing invalid YAML when a post title contains double quotes.
+time: 2026-11-12T19:50:41.114492-06:00

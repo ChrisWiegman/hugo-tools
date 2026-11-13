@@ -147,11 +147,18 @@ function parseTitleFromFm(fm) {
 
 	let raw = m[1].trim();
 
-	if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith('\'') && raw.endsWith('\''))) {
-		raw = raw.slice(1, -1);
+	if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
+		raw = raw.slice(1, -1).replace(/\\(["\\])/g, '$1');
+	} else if (raw.length >= 2 && raw.startsWith('\'') && raw.endsWith('\'')) {
+		raw = raw.slice(1, -1).replace(/''/g, '\'');
 	}
 
 	return raw.trim() || null;
+}
+
+/** Double-quote a string for YAML, escaping backslashes and double quotes. */
+function yamlQuote(s) {
+	return `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
 function titleFromBasename(b) {
@@ -302,7 +309,7 @@ function processContent(text, mode, baseName, dateStamp, publishStamp, draftPath
 
 	const slug = slugify(title);
 
-	fm = ensureLine(fm, 'title', `"${title}"`);
+	fm = ensureLine(fm, 'title', yamlQuote(title));
 	fm = ensureLine(fm, 'draft', 'false');
 
 	if (!isNote && !fm.match(/^description\s*:/m)) {
@@ -463,6 +470,7 @@ module.exports = {
 	extractListValues,
 	hasCategory,
 	parseTitleFromFm,
+	yamlQuote,
 	titleFromBasename,
 	slugify,
 	stripQuotes,
