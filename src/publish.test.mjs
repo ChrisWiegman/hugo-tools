@@ -15,6 +15,8 @@ const {
 	parseTitleFromFm,
 	yamlQuote,
 	isValidDateString,
+	normalizeDraftPath,
+	isDraftPath,
 	titleFromBasename,
 	slugify,
 	stripQuotes,
@@ -590,4 +592,26 @@ test('isValidDateString: rejects malformed input', () => {
 	for (const d of ['', '2026-1-5', '01/05/2026', '2026-01-05T08:00']) {
 		assert.equal(isValidDateString(d), false, d);
 	}
+});
+
+// ---------------------------------------------------------------------------
+// normalizeDraftPath / isDraftPath
+// ---------------------------------------------------------------------------
+
+test('normalizeDraftPath: accepts relative, ./-prefixed and absolute paths', () => {
+	const cwd = '/site';
+
+	assert.equal(normalizeDraftPath('content/drafts/a.md', cwd), 'content/drafts/a.md');
+	assert.equal(normalizeDraftPath('./content/drafts/a.md', cwd), 'content/drafts/a.md');
+	assert.equal(normalizeDraftPath('/site/content/drafts/a.md', cwd), 'content/drafts/a.md');
+	assert.equal(normalizeDraftPath('content/posts/../drafts/a.md', cwd), 'content/drafts/a.md');
+});
+
+test('isDraftPath: requires a .md file under the drafts directory', () => {
+	assert.equal(isDraftPath('content/drafts/a.md', 'content/drafts'), true);
+	assert.equal(isDraftPath('content/drafts/a.md', './content/drafts/'), true);
+	assert.equal(isDraftPath('content/drafts/a.txt', 'content/drafts'), false);
+	assert.equal(isDraftPath('content/posts/a.md', 'content/drafts'), false);
+	assert.equal(isDraftPath('content/drafts-old/a.md', 'content/drafts'), false);
+	assert.equal(isDraftPath('../content/drafts/a.md', 'content/drafts'), false);
 });

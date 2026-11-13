@@ -356,6 +356,23 @@ function processContent(text, mode, baseName, dateStamp, publishStamp, draftPath
 	return { slug, typeDir: isNote ? 'notes' : 'posts', updated };
 }
 
+// --- Draft path handling ---
+
+/**
+ * Normalize a draft path argument (relative, ./-prefixed or absolute) to a
+ * forward-slash path relative to the site root.
+ */
+function normalizeDraftPath(arg, cwd = process.cwd()) {
+	return path.relative(cwd, path.resolve(cwd, arg)).split(path.sep).join('/');
+}
+
+/** True when a normalized path is a .md file inside the drafts directory. */
+function isDraftPath(relPath, draftsDir) {
+	const prefix = path.posix.normalize(draftsDir.replace(/\\/g, '/')).replace(/\/$/, '');
+
+	return relPath.startsWith(prefix + '/') && relPath.endsWith('.md');
+}
+
 // --- Interactive prompt ---
 
 async function ask(question) {
@@ -374,17 +391,17 @@ async function ask(question) {
 async function main() {
 	config.requireHugoSite();
 
-	const draftPath = process.argv[2];
+	const draftArg = process.argv[2];
 	let mode = process.argv[3] || '';
 
-	if (!draftPath) {
+	if (!draftArg) {
 		console.error('Error: draft path required (e.g. content/drafts/My Draft.md)');
 		process.exit(1);
 	}
 
-	const draftsPrefix = config.draftsDir.replace(/\\/g, '/').replace(/\/$/, '');
+	const draftPath = normalizeDraftPath(draftArg);
 
-	if (!draftPath.startsWith(draftsPrefix + '/') || !draftPath.endsWith('.md')) {
+	if (!isDraftPath(draftPath, config.draftsDir)) {
 		console.error(`Error: draft must be under ${config.draftsDir}/*.md`);
 		process.exit(1);
 	}
@@ -486,6 +503,8 @@ module.exports = {
 	stripQuotes,
 	chicagoAt8AM,
 	isValidDateString,
+	normalizeDraftPath,
+	isDraftPath,
 	formatChicagoDateTitle,
 	formatChicagoTime,
 };
