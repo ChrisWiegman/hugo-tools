@@ -1,0 +1,3 @@
+kind: Bug Fixes
+body: Fixed import-books potentially rewriting lines in a book's review that look like front matter keys (title:, rating:, finished:, reference:, cover:).
+time: 2026-11-12T19:55:18.675328-06:00

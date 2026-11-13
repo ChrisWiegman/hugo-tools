@@ -666,50 +666,91 @@ async function fileExists(p) {
 // -------------------- Patch finished block in existing file --------------------
 
 /**
+ * Apply `fn` to the front matter lines of `md` (between the opening and closing `---`)
+ * and return the rebuilt document, so edits can never touch the body. Returns null when
+ * the document has no front matter.
+ */
+function mapFrontMatterLines(md, fn) {
+	const lines = md.split('\n');
+
+	if (lines[0].trim() !== '---') return null;
+
+	const closeIdx = lines.findIndex((l, i) => i > 0 && l.trim() === '---');
+
+	if (closeIdx === -1) return null;
+
+	const fmLines = fn(lines.slice(1, closeIdx));
+
+	return [lines[0], ...fmLines, ...lines.slice(closeIdx)].join('\n');
+}
+
+/** Replace the first `key:` scalar line in front matter; returns md unchanged when absent. */
+function replaceScalarInFrontMatter(md, key, line) {
+	const re = new RegExp(`^${key}:`);
+
+	return mapFrontMatterLines(md, (fm) => {
+		const idx = fm.findIndex((l) => re.test(l));
+
+		if (idx === -1) return fm;
+
+		return [...fm.slice(0, idx), line, ...fm.slice(idx + 1)];
+	}) ?? md;
+}
+
+/**
  * Replace only the `finished:` block in an existing markdown file.
  * Leaves all other front matter (title, author, rating, links, body) untouched.
  */
 function replaceFinishedBlock(md, newFinished) {
 	const block = ['finished:', ...newFinished.map((d) => `  - "${d}"`)];
-	const lines = md.split('\n');
+	let found = false;
 
-	// Find the "finished:" line
-	const finishedIdx = lines.findIndex((l) => /^finished:\s*$/.test(l));
+	const result = mapFrontMatterLines(md, (lines) => {
+		// List form: "finished:\n  - ...\n  - ..." — the list ends at the first unindented line
+		const finishedIdx = lines.findIndex((l) => /^finished:\s*$/.test(l));
 
-	if (finishedIdx !== -1) {
-		// List form: "finished:\n  - ...\n  - ..."
-		// Find where the list ends (first line that doesn't start with whitespace, after the key)
-		let endIdx = finishedIdx + 1;
+		if (finishedIdx !== -1) {
+			let endIdx = finishedIdx + 1;
 
-		while (endIdx < lines.length && /^\s/.test(lines[endIdx])) {
-			endIdx++;
+			while (endIdx < lines.length && /^\s/.test(lines[endIdx])) {
+				endIdx++;
+			}
+
+			found = true;
+			return [...lines.slice(0, finishedIdx), ...block, ...lines.slice(endIdx)];
 		}
-		return [...lines.slice(0, finishedIdx), ...block, ...lines.slice(endIdx)].join('\n');
+
+		// Scalar form: 'finished: "YYYY-MM-DD"' or 'finished: YYYY-MM-DD'
+		const scalarIdx = lines.findIndex((l) => /^finished:\s+"?\d{4}-\d{2}-\d{2}"?\s*$/.test(l));
+
+		if (scalarIdx !== -1) {
+			found = true;
+			return [...lines.slice(0, scalarIdx), ...block, ...lines.slice(scalarIdx + 1)];
+		}
+
+		return lines;
+	});
+
+	if (!found) {
+		console.warn('  WARNING: could not locate \'finished:\' block — file left unchanged');
+		return md;
 	}
 
-	// Scalar form: 'finished: "YYYY-MM-DD"' or 'finished: YYYY-MM-DD'
-	const scalarIdx = lines.findIndex((l) => /^finished:\s+"?\d{4}-\d{2}-\d{2}"?\s*$/.test(l));
-
-	if (scalarIdx !== -1) {
-		return [...lines.slice(0, scalarIdx), ...block, ...lines.slice(scalarIdx + 1)].join('\n');
-	}
-
-	console.warn('  WARNING: could not locate \'finished:\' block — file left unchanged');
-	return md;
+	return result;
 }
 
 /**
  * Update the title field in front matter, leaving everything else untouched.
  */
 function updateTitleInFrontMatter(md, newTitle) {
-	return md.replace(/^title:.*$/m, `title: "${escapeYAMLString(newTitle)}"`);
+	return replaceScalarInFrontMatter(md, 'title', `title: "${escapeYAMLString(newTitle)}"`);
 }
 
 /**
  * Update the rating field in front matter, leaving everything else untouched.
  */
 function updateRatingInFrontMatter(md, newRating) {
-	return md.replace(/^rating:.*$/m, `rating: ${newRating}`);
+	return replaceScalarInFrontMatter(md, 'rating', `rating: ${newRating}`);
 }
 
 /**
@@ -776,26 +817,26 @@ function upsertReferenceInFrontMatter(md, { isbn, asin }) {
 		`  isbn: "${escapeYAMLString(isbn)}"`,
 		`  asin: "${escapeYAMLString(asin)}"`,
 	];
-	const lines = md.split('\n');
-	const refIdx = lines.findIndex((l) => /^reference:\s*$/.test(l));
+	const result = mapFrontMatterLines(md, (lines) => {
+		const refIdx = lines.findIndex((l) => /^reference:\s*$/.test(l));
 
-	if (refIdx !== -1) {
+		if (refIdx === -1) return [...lines, ...block];
+
 		let endIdx = refIdx + 1;
 
 		while (endIdx < lines.length && /^\s/.test(lines[endIdx])) {
 			endIdx++;
 		}
-		return [...lines.slice(0, refIdx), ...block, ...lines.slice(endIdx)].join('\n');
-	}
 
-	const closingIdx = lines.findIndex((l, i) => i > 0 && l.trim() === '---');
+		return [...lines.slice(0, refIdx), ...block, ...lines.slice(endIdx)];
+	});
 
-	if (closingIdx === -1) {
+	if (result === null) {
 		console.warn('  WARNING: could not locate front matter to insert \'reference:\' block — file left unchanged');
 		return md;
 	}
 
-	return [...lines.slice(0, closingIdx), ...block, ...lines.slice(closingIdx)].join('\n');
+	return result;
 }
 
 /**
@@ -818,20 +859,20 @@ function parseExistingCover(md) {
  */
 function upsertCoverInFrontMatter(md, coverPath) {
 	const line = `cover: "${escapeYAMLString(coverPath)}"`;
+	const result = mapFrontMatterLines(md, (lines) => {
+		const idx = lines.findIndex((l) => /^cover:/.test(l));
 
-	if (/^cover:.*$/m.test(md)) {
-		return md.replace(/^cover:.*$/m, line);
-	}
+		if (idx === -1) return [...lines, line];
 
-	const lines = md.split('\n');
-	const closingIdx = lines.findIndex((l, i) => i > 0 && l.trim() === '---');
+		return [...lines.slice(0, idx), line, ...lines.slice(idx + 1)];
+	});
 
-	if (closingIdx === -1) {
+	if (result === null) {
 		console.warn('  WARNING: could not locate front matter to insert \'cover:\' field — file left unchanged');
 		return md;
 	}
 
-	return [...lines.slice(0, closingIdx), line, ...lines.slice(closingIdx)].join('\n');
+	return result;
 }
 
 // -------------------- Existing-file index --------------------

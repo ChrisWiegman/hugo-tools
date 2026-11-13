@@ -1679,3 +1679,35 @@ test('updateLibraryDate: rewrites the date line', async () => {
 test('updateLibraryDate: reports a missing file without throwing', async () => {
 	assert.equal(await updateLibraryDate(path.join(os.tmpdir(), 'hugo-tools-no-such-library.md')), 'missing');
 });
+
+// ---------------------------------------------------------------------------
+// Front matter edits never touch the body
+// ---------------------------------------------------------------------------
+
+const BODY_LOOKALIKES = 'title: not this\nrating: 1\nfinished:\n  - "1999-01-01"\nreference:\n  isbn: "body"\ncover: body.jpg\n';
+
+test('updateTitleInFrontMatter / updateRatingInFrontMatter: leave body lines alone', () => {
+	const md = `---\ntitle: "Old"\nrating: 3\n---\n${BODY_LOOKALIKES}`;
+
+	assert.equal(updateTitleInFrontMatter(md, 'New'), `---\ntitle: "New"\nrating: 3\n---\n${BODY_LOOKALIKES}`);
+	assert.equal(updateRatingInFrontMatter(md, 5), `---\ntitle: "Old"\nrating: 5\n---\n${BODY_LOOKALIKES}`);
+});
+
+test('replaceFinishedBlock: does not rewrite a finished: list in the body', () => {
+	const md = `---\ntitle: "x"\n---\n${BODY_LOOKALIKES}`;
+
+	assert.equal(replaceFinishedBlock(md, ['2024-01-01']), md);
+});
+
+test('upsertReferenceInFrontMatter: inserts into front matter even when the body has a reference: line', () => {
+	const md = `---\ntitle: "x"\n---\n${BODY_LOOKALIKES}`;
+	const result = upsertReferenceInFrontMatter(md, { isbn: '123', asin: 'B00' });
+
+	assert.equal(result, `---\ntitle: "x"\nreference:\n  isbn: "123"\n  asin: "B00"\n---\n${BODY_LOOKALIKES}`);
+});
+
+test('upsertCoverInFrontMatter: inserts into front matter even when the body has a cover: line', () => {
+	const md = `---\ntitle: "x"\n---\n${BODY_LOOKALIKES}`;
+
+	assert.equal(upsertCoverInFrontMatter(md, '/c.jpg'), `---\ntitle: "x"\ncover: "/c.jpg"\n---\n${BODY_LOOKALIKES}`);
+});
