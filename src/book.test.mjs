@@ -1633,9 +1633,17 @@ test('shouldLookupAsin: never looks up when an ASIN is set or there is no ISBN',
 // withTimeout
 // ---------------------------------------------------------------------------
 
+// A fetch that never responds. AbortSignal.timeout() uses an unref'd timer, so the fake
+// holds the event loop open the way a real pending socket would — otherwise Node 20's test
+// runner sees an empty loop and cancels the test before the timeout fires.
 function hangingFetch() {
 	return (url, opts) => new Promise((resolve, reject) => {
-		opts.signal.addEventListener('abort', () => reject(opts.signal.reason));
+		const keepAlive = setTimeout(() => {}, 10_000);
+
+		opts.signal.addEventListener('abort', () => {
+			clearTimeout(keepAlive);
+			reject(opts.signal.reason);
+		});
 	});
 }
 
