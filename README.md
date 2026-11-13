@@ -259,7 +259,7 @@ Clipboard support (no-content-file mode): macOS (`pbcopy`), Windows (`clip`), Li
 Imports books from a [Goodreads CSV export](https://www.goodreads.com/review/import) into Hugo content files under `booksDir`.
 
 ```sh
-import-books path/to/goodreads_library_export.csv [--covers]
+import-books path/to/goodreads_library_export.csv [--covers] [--refresh-asins]
 ```
 
 **What it does:**
@@ -279,7 +279,7 @@ NOTE: king-stephen/the-gunslinger.md shows 3x read on Goodreads but only 1 date(
 
 This is informational only — the file isn't touched, and nothing else about the import is blocked. Add the missing date(s) to the file's `finished:` list yourself; the note stops appearing once the counts match. A run's summary also reports how many books were flagged this way (`Rereads needing dates`).
 
-**ASIN lookup:** Goodreads exports don't include an ASIN, so it's looked up per ISBN from Open Library, then Google Books, and left blank (`""`) if neither has one. To use the official Amazon Product Advertising API as a final fallback, add credentials to `.hugo-tools.json`:
+**ASIN lookup:** Goodreads exports don't include an ASIN, so it's looked up per ISBN from Open Library, then Google Books, and left blank (`""`) if neither has one. Each ISBN is only looked up once: on later runs, existing files whose `reference` block already has a blank ASIN are skipped unless their ISBN changed. Pass `--refresh-asins` to retry those lookups. To use the official Amazon Product Advertising API as a final fallback, add credentials to `.hugo-tools.json`:
 
 ```json
 {

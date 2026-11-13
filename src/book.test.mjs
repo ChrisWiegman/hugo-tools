@@ -26,6 +26,8 @@ import {
 	updateTitleInFrontMatter,
 	updateRatingInFrontMatter,
 	parseExistingReference,
+	hasReferenceBlock,
+	shouldLookupAsin,
 	upsertReferenceInFrontMatter,
 	parseExistingCover,
 	upsertCoverInFrontMatter,
@@ -1594,4 +1596,32 @@ test('planWrite: never overwrites a different file at the new path', async () =>
 	await fs.writeFile(newPath, 'another book');
 	assert.deepEqual(await planWrite(oldPath, newPath), { targetPath: oldPath, rename: false, conflict: true });
 	await fs.rm(dir, { recursive: true });
+});
+
+// ---------------------------------------------------------------------------
+// hasReferenceBlock / shouldLookupAsin
+// ---------------------------------------------------------------------------
+
+test('hasReferenceBlock: detects a reference block in front matter only', () => {
+	assert.equal(hasReferenceBlock('---\ntitle: "x"\nreference:\n  isbn: ""\n---\n'), true);
+	assert.equal(hasReferenceBlock('---\ntitle: "x"\n---\nreference:\n'), false);
+	assert.equal(hasReferenceBlock('no front matter'), false);
+});
+
+test('shouldLookupAsin: looks up when the file has never had a reference block', () => {
+	assert.equal(shouldLookupAsin({ existingAsin: '', existingIsbn: '', finalIsbn: '123', referenceBlock: false, refresh: false }), true);
+});
+
+test('shouldLookupAsin: skips a previously attempted ISBN with a blank ASIN', () => {
+	assert.equal(shouldLookupAsin({ existingAsin: '', existingIsbn: '123', finalIsbn: '123', referenceBlock: true, refresh: false }), false);
+});
+
+test('shouldLookupAsin: retries when the ISBN changed or --refresh-asins is passed', () => {
+	assert.equal(shouldLookupAsin({ existingAsin: '', existingIsbn: '', finalIsbn: '123', referenceBlock: true, refresh: false }), true);
+	assert.equal(shouldLookupAsin({ existingAsin: '', existingIsbn: '123', finalIsbn: '123', referenceBlock: true, refresh: true }), true);
+});
+
+test('shouldLookupAsin: never looks up when an ASIN is set or there is no ISBN', () => {
+	assert.equal(shouldLookupAsin({ existingAsin: 'B00', existingIsbn: '123', finalIsbn: '123', referenceBlock: true, refresh: true }), false);
+	assert.equal(shouldLookupAsin({ existingAsin: '', existingIsbn: '', finalIsbn: '', referenceBlock: false, refresh: true }), false);
 });

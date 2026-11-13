@@ -38,6 +38,8 @@
  *   then Google Books, and left blank if neither has one. Configure an Amazon Product
  *   Advertising API key in .hugo-tools.json (amazonPaApi: { accessKey, secretKey, partnerTag })
  *   to use it as a final fallback.
+ * - Each ISBN is looked up once. Existing files whose reference block already has a blank
+ *   ASIN aren't re-queried on later runs unless their ISBN changes or --refresh-asins is passed.
  *
  * Cover art (opt-in):
  * - Off by default — pass --covers to fetch and save cover art.
@@ -50,7 +52,7 @@
  *   (e.g. entered by hand) is never overwritten.
  *
  * Usage:
- *   node scripts/book.mjs path/to/goodreads.csv [--covers]
+ *   import-books path/to/goodreads.csv [--covers] [--refresh-asins]
  *
  * Notes:
  * - This script uses global fetch (Node 18+).
@@ -88,7 +90,7 @@ const COVERS_DIR = _userConfig.coversDir ?? 'assets/images/books';
 // -------------------- Utilities --------------------
 
 function usageAndExit() {
-	console.error('Usage: node scripts/book.mjs path/to/goodreads.csv [--covers]');
+	console.error('Usage: import-books path/to/goodreads.csv [--covers] [--refresh-asins]');
 	process.exit(1);
 }
 
@@ -739,6 +741,25 @@ function parseExistingReference(md) {
 	return { isbn, asin };
 }
 
+/** True when the front matter already contains a `reference:` block. */
+function hasReferenceBlock(md) {
+	const m = md.match(/^---\s*\n([\s\S]*?)\n---/);
+
+	return Boolean(m && /^reference:\s*$/m.test(m[1]));
+}
+
+/**
+ * Decide whether to query the network for an ASIN on an existing file. A file whose
+ * reference block was already written has had a lookup attempt for its ISBN, so a blank
+ * ASIN there means "none found" — only retry when the ISBN changed or --refresh-asins
+ * was passed. This keeps re-runs from re-querying every book without an ASIN.
+ */
+function shouldLookupAsin({ existingAsin, existingIsbn, finalIsbn, referenceBlock, refresh }) {
+	if (existingAsin || !finalIsbn) return false;
+
+	return refresh || !referenceBlock || finalIsbn !== existingIsbn;
+}
+
 /**
  * Insert or replace the `reference:` block in front matter, leaving everything
  * else untouched. Inserts a new block just before the closing `---` when none exists.
@@ -990,6 +1011,7 @@ async function main() {
 
 	const argv = process.argv.slice(2);
 	const withCovers = argv.includes('--covers');
+	const refreshAsins = argv.includes('--refresh-asins');
 	const csvPath = argv.find((a) => a && !a.startsWith('--'));
 
 	if (!csvPath) usageAndExit();
@@ -1171,7 +1193,13 @@ async function main() {
 			const finalIsbn = existingIsbn || isbnBest || '';
 			let finalAsin = existingAsin;
 
-			if (!finalAsin && finalIsbn) {
+			if (shouldLookupAsin({
+				existingAsin,
+				existingIsbn,
+				finalIsbn,
+				referenceBlock: hasReferenceBlock(existingContent),
+				refresh: refreshAsins,
+			})) {
 				finalAsin = await lookupAsin(finalIsbn, AMAZON_PA_CONFIG, asinCache);
 			}
 
@@ -1408,6 +1436,8 @@ export {
 	updateTitleInFrontMatter,
 	updateRatingInFrontMatter,
 	parseExistingReference,
+	hasReferenceBlock,
+	shouldLookupAsin,
 	upsertReferenceInFrontMatter,
 	parseExistingCover,
 	upsertCoverInFrontMatter,
