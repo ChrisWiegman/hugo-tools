@@ -95,7 +95,7 @@ async function main() {
 	// Check if data file exists
 	if (!fs.existsSync(DATA_FILE)) {
 		console.error(`Error: Data file not found at ${DATA_FILE}`);
-		console.error('Run "extract-tags" first to generate the data file.');
+		console.error('Run "hugo-extract-tags" first to generate the data file.');
 		process.exit(1);
 	}
 

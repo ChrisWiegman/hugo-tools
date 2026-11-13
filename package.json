@@ -37,11 +37,19 @@
     "draft": "src/draft.js",
     "pick-image": "src/pick-image.js",
     "publish": "src/publish.js",
-    "import-books": "src/book.mjs"
+    "import-books": "src/book.mjs",
+    "hugo-config": "src/config-init.js",
+    "hugo-vscode": "src/vscode.js",
+    "hugo-extract-tags": "src/extract-tags.js",
+    "hugo-add-tags": "src/add-tags.js",
+    "hugo-draft": "src/draft.js",
+    "hugo-pick-image": "src/pick-image.js",
+    "hugo-publish": "src/publish.js",
+    "hugo-import-books": "src/book.mjs"
   },
   "scripts": {
     "lint": "eslint src/",
-    "test": "node --test src/book.test.mjs src/publish.test.mjs src/extract-tags.test.mjs src/draft.test.mjs src/pick-image.test.mjs"
+    "test": "node --test src/book.test.mjs src/publish.test.mjs src/extract-tags.test.mjs src/draft.test.mjs src/pick-image.test.mjs src/vscode.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

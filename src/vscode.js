@@ -2,6 +2,9 @@
 'use strict';
 
 /**
+ * Tasks call the hugo- prefixed bins with `npx --no` so a missing local install fails
+ * instead of npx fetching an unrelated registry package named e.g. `publish` or `draft`.
+ *
  * Scaffolds VS Code config for a Hugo site using hugo-tools.
  * Usage:
  *   vscode
@@ -25,31 +28,31 @@ const TASKS = {
 		{
 			'label': 'Create Draft',
 			'type': 'shell',
-			'command': 'npx draft',
+			'command': 'npx --no hugo-draft',
 			'problemMatcher': [],
 		},
 		{
 			'label': 'Add Tags',
 			'type': 'shell',
-			'command': 'npx add-tags',
+			'command': 'npx --no hugo-add-tags',
 			'problemMatcher': [],
 		},
 		{
 			'label': 'Publish Draft (now)',
 			'type': 'shell',
-			'command': 'output=$(npx publish "${relativeFile}" now); echo "$output"; newFile=$(echo "$output" | grep -oE \'content/[^ ]+\\.md\'); [ -n "$newFile" ] && code -r "${workspaceFolder}/$newFile"',
+			'command': 'output=$(npx --no hugo-publish "${relativeFile}" now); echo "$output"; newFile=$(echo "$output" | grep -oE \'content/[^ ]+\\.md\'); [ -n "$newFile" ] && code -r "${workspaceFolder}/$newFile"',
 			'problemMatcher': [],
 		},
 		{
 			'label': 'Publish Draft (later)',
 			'type': 'shell',
-			'command': 'read -p "Publish date (YYYY-MM-DD): " d; output=$(npx publish "${relativeFile}" later "$d"); echo "$output"; newFile=$(echo "$output" | grep -oE \'content/[^ ]+\\.md\'); [ -n "$newFile" ] && code -r "${workspaceFolder}/$newFile"',
+			'command': 'read -p "Publish date (YYYY-MM-DD): " d; output=$(npx --no hugo-publish "${relativeFile}" later "$d"); echo "$output"; newFile=$(echo "$output" | grep -oE \'content/[^ ]+\\.md\'); [ -n "$newFile" ] && code -r "${workspaceFolder}/$newFile"',
 			'problemMatcher': [],
 		},
 		{
 			'label': 'Pick Image',
 			'type': 'shell',
-			'command': 'read -p \'Image path: \' img; npx pick-image "$img" "${relativeFile}"',
+			'command': 'read -p \'Image path: \' img; npx --no hugo-pick-image "$img" "${relativeFile}"',
 			'problemMatcher': [],
 			'presentation': {
 				'focus': true,
@@ -105,4 +108,8 @@ function main() {
 	extractTags();
 }
 
-main();
+if (require.main === module) {
+	main();
+}
+
+module.exports = { TASKS };
