@@ -14,39 +14,58 @@ const OUTPUT_FILE = path.join(process.cwd(), config.vscodeDir, 'tags-categories.
 const SNIPPETS_FILE = path.join(process.cwd(), config.vscodeDir, 'markdown.code-snippets');
 
 /**
- * Extracts frontmatter from a markdown file
+ * Extracts frontmatter from a markdown file (LF or CRLF line endings)
  */
 function extractFrontmatter(content) {
-	const match = content.match(/^---\n([\s\S]*?)\n---/);
+	const match = content.replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n?---(?:\n|$)/);
 
 	return match ? match[1] : null;
 }
 
+function escapeRegex(s) {
+	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function cleanItem(raw) {
+	return raw.trim().replace(/^["']|["']$/g, '').trim();
+}
+
 /**
- * Parses YAML-style list items from frontmatter
+ * Parses a frontmatter list value. Supports block lists (`key:` followed by
+ * `- item` lines), inline lists (`key: [a, b]`) and single scalars (`key: a`).
  */
 function parseListItems(frontmatter, key) {
+	const lines = frontmatter.split(/\r?\n/);
+	const keyRe = new RegExp(`^${escapeRegex(key)}\\s*:\\s*(.*?)\\s*$`);
 	const items = [];
-	const blockRegex = new RegExp(`^${key}:\\s*\\n((\\s*-\\s*.+\\n)+)`, 'm');
-	const match = frontmatter.match(blockRegex);
 
-	if (match) {
-		const lines = match[1].split('\n');
+	for (let i = 0; i < lines.length; i++) {
+		const m = lines[i].match(keyRe);
 
-		for (const line of lines) {
-			const itemMatch = line.match(/^\s*-\s*(.+)\s*$/);
+		if (!m) continue;
 
-			if (itemMatch) {
-				const value = itemMatch[1].trim().replace(/^["']|["']$/g, '');
+		const rest = m[1];
 
-				if (value) {
-					items.push(value);
+		if (rest.startsWith('[')) {
+			items.push(...rest.replace(/^\[|\]$/g, '').split(',').map(cleanItem));
+		} else if (rest) {
+			items.push(cleanItem(rest));
+		} else {
+			for (let j = i + 1; j < lines.length; j++) {
+				const itemMatch = lines[j].match(/^\s*-\s*(.*)$/);
+
+				if (itemMatch) {
+					items.push(cleanItem(itemMatch[1]));
+				} else if (lines[j].trim() !== '') {
+					break;
 				}
 			}
 		}
+
+		break;
 	}
 
-	return items;
+	return items.filter(Boolean);
 }
 
 /**

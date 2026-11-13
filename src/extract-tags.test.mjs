@@ -90,6 +90,33 @@ test('parseListItems: single item list', () => {
 	assert.deepEqual(parseListItems(fm, 'tags'), ['solo']);
 });
 
+test('parseListItems: keeps the last item when the list ends the frontmatter', () => {
+	const fm = extractFrontmatter('---\ntitle: x\ncategories:\n  - Tech\ntags:\n  - a\n  - b\n---\nbody');
+
+	assert.deepEqual(parseListItems(fm, 'tags'), ['a', 'b']);
+	assert.deepEqual(parseListItems(fm, 'categories'), ['Tech']);
+});
+
+test('parseListItems: parses inline lists', () => {
+	assert.deepEqual(parseListItems('tags: [a, "b c", \'d\']\n', 'tags'), ['a', 'b c', 'd']);
+	assert.deepEqual(parseListItems('tags: []\n', 'tags'), []);
+});
+
+test('parseListItems: parses a scalar value', () => {
+	assert.deepEqual(parseListItems('categories: Tech\n', 'categories'), ['Tech']);
+});
+
+test('parseListItems: ignores empty placeholder items', () => {
+	assert.deepEqual(parseListItems('tags:\n  -\ntitle: x\n', 'tags'), []);
+});
+
+test('extractFrontmatter: handles CRLF line endings', () => {
+	const fm = extractFrontmatter('---\r\ntitle: x\r\ntags:\r\n  - a\r\n---\r\nbody');
+
+	assert.equal(fm, 'title: x\ntags:\n  - a');
+	assert.deepEqual(parseListItems(fm, 'tags'), ['a']);
+});
+
 // ---------------------------------------------------------------------------
 // generatePrefixes
 // ---------------------------------------------------------------------------
