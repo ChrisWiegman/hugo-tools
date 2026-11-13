@@ -1,0 +1,3 @@
+kind: Security Fixes
+body: Override minimatch to ^11.0.8 to resolve GHSA-g3hv-75wg-m249 (denial of service via globparts amplification) in the eslint dev dependency chain.
+time: 2026-11-12T19:43:00.966026-06:00

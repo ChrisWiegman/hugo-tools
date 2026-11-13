@@ -47,7 +47,10 @@
     "@eslint/js": "^10.0.1",
     "@stylistic/eslint-plugin": "^5.10.0",
     "changie": "^1.26.0",
-    "eslint": "^10.9.1",
-    "globals": "^17.11.0"
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0"
+  },
+  "overrides": {
+    "minimatch": "^11.0.8"
   }
 }
