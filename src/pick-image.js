@@ -22,27 +22,72 @@ function appendMarkdown(content, urlPath) {
 	return `${content.trimEnd()}\n\n![](${urlPath})\n`;
 }
 
+function cleanItem(raw) {
+	return raw.trim().replace(/^["']|["']$/g, '').trim();
+}
+
+/**
+ * Returns the `images:` value rewritten as a block list with urlPath appended.
+ * Handles block lists at any indent, the `  -` placeholder, inline `[a, b]`
+ * lists and single scalar values.
+ */
+function rewriteImagesField(lines, idx, urlPath) {
+	const rest = lines[idx].replace(/^images\s*:/, '').trim();
+	let items = [];
+	let indent = '  ';
+	let end = idx + 1;
+
+	if (rest.startsWith('[')) {
+		items = rest.replace(/^\[|\]$/g, '').split(',').map(cleanItem);
+	} else if (rest) {
+		items = [cleanItem(rest)];
+	} else {
+		let first = true;
+
+		while (end < lines.length) {
+			const m = lines[end].match(/^(\s*)-(?:\s+(.*))?\s*$/);
+
+			if (!m) break;
+
+			if (first) {
+				indent = m[1];
+				first = false;
+			}
+
+			items.push(m[2] ? m[2].trim() : '');
+			end++;
+		}
+	}
+
+	items = items.filter(Boolean);
+	items.push(urlPath);
+
+	return [...lines.slice(0, idx), 'images:', ...items.map((item) => `${indent}- ${item}`), ...lines.slice(end)];
+}
+
 function insertImage(content, urlPath) {
-	const fmEnd = content.indexOf('\n---', 4);
+	const crlf = content.includes('\r\n');
+	const text = crlf ? content.replace(/\r\n/g, '\n') : content;
+	const restore = (out) => (crlf ? out.replace(/\n/g, '\r\n') : out);
 
-	if (!content.startsWith('---\n') || fmEnd === -1) {
-		return appendMarkdown(content, urlPath);
+	if (!text.startsWith('---\n')) {
+		return restore(appendMarkdown(text, urlPath));
 	}
 
-	const frontmatter = content.slice(4, fmEnd);
+	const lines = text.split('\n');
+	const closeIdx = lines.findIndex((l, i) => i > 0 && l.trim() === '---');
 
-	if (!/^images:/m.test(frontmatter)) {
-		return appendMarkdown(content, urlPath);
+	if (closeIdx === -1) {
+		return restore(appendMarkdown(text, urlPath));
 	}
 
-	return content.replace(
-		/^(images:)((?:\n {2}-[^\n]*)*)/m,
-		(_, key, block) => {
-			const existing = block.split('\n').filter((line) => /^ {2}- \S/.test(line));
+	const imagesIdx = lines.findIndex((l, i) => i > 0 && i < closeIdx && /^images\s*:/.test(l));
 
-			return [key, ...existing, `  - ${urlPath}`].join('\n');
-		},
-	);
+	if (imagesIdx === -1) {
+		return restore(appendMarkdown(text, urlPath));
+	}
+
+	return restore(rewriteImagesField(lines, imagesIdx, urlPath).join('\n'));
 }
 
 function copyToClipboard(text) {

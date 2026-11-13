@@ -119,3 +119,50 @@ test('insertImage: body content is preserved when updating frontmatter', () => {
 
 	assert.ok(result.includes('This is the body.'));
 });
+
+// ---------------------------------------------------------------------------
+// insertImage — other list styles
+// ---------------------------------------------------------------------------
+
+test('insertImage: converts an empty inline list', () => {
+	const result = insertImage('---\ntitle: x\nimages: []\n---\nbody', '/images/a.jpg');
+
+	assert.equal(result, '---\ntitle: x\nimages:\n  - /images/a.jpg\n---\nbody');
+});
+
+test('insertImage: converts a populated inline list', () => {
+	const result = insertImage('---\nimages: ["/images/old.jpg"]\n---\n', '/images/new.jpg');
+
+	assert.equal(result, '---\nimages:\n  - /images/old.jpg\n  - /images/new.jpg\n---\n');
+});
+
+test('insertImage: converts a scalar value', () => {
+	const result = insertImage('---\nimages: /images/old.jpg\n---\n', '/images/new.jpg');
+
+	assert.equal(result, '---\nimages:\n  - /images/old.jpg\n  - /images/new.jpg\n---\n');
+});
+
+test('insertImage: keeps existing items at zero indent', () => {
+	const result = insertImage('---\nimages:\n- /images/old.jpg\ntags:\n  - a\n---\n', '/images/new.jpg');
+
+	assert.equal(result, '---\nimages:\n- /images/old.jpg\n- /images/new.jpg\ntags:\n  - a\n---\n');
+});
+
+test('insertImage: keeps existing items at four-space indent', () => {
+	const result = insertImage('---\nimages:\n    - /images/old.jpg\n---\n', '/images/new.jpg');
+
+	assert.equal(result, '---\nimages:\n    - /images/old.jpg\n    - /images/new.jpg\n---\n');
+});
+
+test('insertImage: ignores an images: line in the body', () => {
+	const result = insertImage('---\ntitle: x\n---\nimages:\n  - nope\n', '/images/new.jpg');
+
+	assert.ok(result.endsWith('![](/images/new.jpg)\n'));
+	assert.ok(result.includes('  - nope'));
+});
+
+test('insertImage: preserves CRLF line endings', () => {
+	const result = insertImage('---\r\nimages:\r\n  -\r\n---\r\nbody', '/images/a.jpg');
+
+	assert.equal(result, '---\r\nimages:\r\n  - /images/a.jpg\r\n---\r\nbody');
+});
