@@ -81,6 +81,16 @@ function chicagoAt8AM(dateStr) {
 	return `${dateStr}T08:00:00${getChicagoOffset(target)}`;
 }
 
+/** True for a real calendar date in YYYY-MM-DD form (rejects e.g. 2026-02-31). */
+function isValidDateString(dateStr) {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+
+	const [year, month, day] = dateStr.split('-').map(Number);
+	const d = new Date(Date.UTC(year, month - 1, day));
+
+	return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+}
+
 // --- Front matter helpers ---
 
 function escapeRegex(s) {
@@ -403,8 +413,8 @@ async function main() {
 			pubDate = await ask('Enter publish date (YYYY-MM-DD):\n');
 		}
 
-		if (!/^\d{4}-\d{2}-\d{2}$/.test(pubDate)) {
-			console.error('Error: date must be YYYY-MM-DD');
+		if (!isValidDateString(pubDate)) {
+			console.error('Error: date must be a valid calendar date in YYYY-MM-DD form');
 			process.exit(1);
 		}
 
@@ -475,6 +485,7 @@ module.exports = {
 	slugify,
 	stripQuotes,
 	chicagoAt8AM,
+	isValidDateString,
 	formatChicagoDateTitle,
 	formatChicagoTime,
 };

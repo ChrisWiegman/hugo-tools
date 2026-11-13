@@ -14,6 +14,7 @@ const {
 	hasCategory,
 	parseTitleFromFm,
 	yamlQuote,
+	isValidDateString,
 	titleFromBasename,
 	slugify,
 	stripQuotes,
@@ -567,5 +568,26 @@ test('processContent: writes valid YAML for titles containing double quotes', ()
 
 		assert.match(updated, /^title: "Why \\"AI\\" is hype"$/m);
 		assert.equal(slug, 'why-ai-is-hype');
+	}
+});
+
+// ---------------------------------------------------------------------------
+// isValidDateString
+// ---------------------------------------------------------------------------
+
+test('isValidDateString: accepts real dates including leap days', () => {
+	assert.equal(isValidDateString('2026-01-05'), true);
+	assert.equal(isValidDateString('2028-02-29'), true);
+});
+
+test('isValidDateString: rejects impossible dates', () => {
+	for (const d of ['2026-02-31', '2026-02-29', '2026-13-01', '2026-00-10', '2026-04-31']) {
+		assert.equal(isValidDateString(d), false, d);
+	}
+});
+
+test('isValidDateString: rejects malformed input', () => {
+	for (const d of ['', '2026-1-5', '01/05/2026', '2026-01-05T08:00']) {
+		assert.equal(isValidDateString(d), false, d);
 	}
 });
