@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { extractFrontmatter, parseListItems, generatePrefixes } = require('./extract-tags.js');
+const { extractFrontmatter, parseListItems, generatePrefixes, findMarkdownFiles } = require('./extract-tags.js');
 
 // ---------------------------------------------------------------------------
 // extractFrontmatter
@@ -158,4 +161,26 @@ test('generatePrefixes: Open Source includes oss abbreviation', () => {
 	const result = generatePrefixes('Open Source');
 
 	assert.ok(result.includes('oss'));
+});
+
+// ---------------------------------------------------------------------------
+// findMarkdownFiles
+// ---------------------------------------------------------------------------
+
+test('findMarkdownFiles: returns an empty list when the directory does not exist', () => {
+	assert.deepEqual(findMarkdownFiles(path.join(os.tmpdir(), 'hugo-tools-missing-dir-xyz')), []);
+});
+
+test('findMarkdownFiles: finds nested markdown files only', () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'extract-tags-'));
+
+	fs.mkdirSync(path.join(dir, '2026'));
+	fs.writeFileSync(path.join(dir, '2026', 'a.md'), '');
+	fs.writeFileSync(path.join(dir, 'b.md'), '');
+	fs.writeFileSync(path.join(dir, 'c.txt'), '');
+
+	const found = findMarkdownFiles(dir).map((f) => path.relative(dir, f)).sort();
+
+	assert.deepEqual(found, [path.join('2026', 'a.md'), 'b.md']);
+	fs.rmSync(dir, { recursive: true });
 });

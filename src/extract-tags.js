@@ -73,6 +73,9 @@ function parseListItems(frontmatter, key) {
  */
 function findMarkdownFiles(dir) {
 	const files = [];
+
+	if (!fs.existsSync(dir)) return files;
+
 	const entries = fs.readdirSync(dir, { withFileTypes: true });
 
 	for (const entry of entries) {
@@ -96,6 +99,10 @@ function extractTagsAndCategories() {
 	const tags = new Set();
 	const categoryCount = {};
 	const tagCount = {};
+
+	if (!fs.existsSync(CONTENT_DIR)) {
+		console.log(`Posts directory ${CONTENT_DIR} does not exist yet — writing empty tag data.`);
+	}
 
 	const files = findMarkdownFiles(CONTENT_DIR);
 
@@ -261,4 +268,4 @@ if (require.main === module) {
 	main();
 }
 
-module.exports = { extractFrontmatter, parseListItems, generatePrefixes, main };
+module.exports = { extractFrontmatter, parseListItems, generatePrefixes, findMarkdownFiles, main };
