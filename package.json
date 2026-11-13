@@ -49,7 +49,7 @@
   },
   "scripts": {
     "lint": "eslint src/",
-    "test": "node --test src/book.test.mjs src/publish.test.mjs src/extract-tags.test.mjs src/draft.test.mjs src/pick-image.test.mjs src/vscode.test.mjs"
+    "test": "node --test src/book.test.mjs src/publish.test.mjs src/extract-tags.test.mjs src/draft.test.mjs src/pick-image.test.mjs src/vscode.test.mjs src/add-tags.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

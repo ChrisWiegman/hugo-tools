@@ -13,35 +13,57 @@ const config = require('./config');
 const DATA_FILE = path.join(process.cwd(), config.vscodeDir, 'tags-categories.json');
 
 /**
- * Display menu and get user selection
+ * Interpret a menu answer. Blank or 0 means done/skip; 1..count picks that option;
+ * anything else is invalid and should be asked again.
  */
-async function getSelection(prompt, options) {
+function parseSelection(answer, count) {
+	const trimmed = String(answer ?? '').trim();
+
+	if (trimmed === '' || trimmed === '0') return { type: 'done' };
+
+	if (/^\d+$/.test(trimmed)) {
+		const num = Number(trimmed);
+
+		if (num >= 1 && num <= count) return { type: 'pick', index: num - 1 };
+	}
+
+	return { type: 'invalid' };
+}
+
+function ask(question) {
 	const rl = readline.createInterface({
 		input: process.stdin,
 		output: process.stdout,
 	});
 
 	return new Promise((resolve) => {
-		console.log(`\n${prompt}`);
-		options.forEach((opt, idx) => {
-			console.log(`  ${idx + 1}. ${opt}`);
-		});
-		console.log('  0. Done/Skip');
-
-		rl.question('\nEnter number: ', (answer) => {
+		rl.question(question, (answer) => {
 			rl.close();
-			const num = parseInt(answer, 10);
-
-			if (num === 0) {
-				resolve(null);
-			} else if (num > 0 && num <= options.length) {
-				resolve(options[num - 1]);
-			} else {
-				console.log('Invalid selection');
-				resolve(null);
-			}
+			resolve(answer);
 		});
 	});
+}
+
+/**
+ * Display menu and get user selection. Re-prompts on invalid input instead of
+ * treating a typo as "done".
+ */
+async function getSelection(prompt, options) {
+	console.log(`\n${prompt}`);
+	options.forEach((opt, idx) => {
+		console.log(`  ${idx + 1}. ${opt}`);
+	});
+	console.log('  0. Done/Skip');
+
+	for (;;) {
+		const result = parseSelection(await ask('\nEnter number: '), options.length);
+
+		if (result.type === 'done') return null;
+
+		if (result.type === 'pick') return options[result.index];
+
+		console.log(`Invalid selection — enter a number from 0 to ${options.length}.`);
+	}
 }
 
 /**
@@ -134,13 +156,17 @@ async function main() {
 	console.log('\n=== Copy the above into your draft frontmatter ===\n');
 }
 
-// Handle Ctrl+C gracefully
-process.on('SIGINT', () => {
-	console.log('\n\nCancelled.');
-	process.exit(0);
-});
+if (require.main === module) {
+	// Handle Ctrl+C gracefully
+	process.on('SIGINT', () => {
+		console.log('\n\nCancelled.');
+		process.exit(0);
+	});
 
-main().catch((err) => {
-	console.error('Error:', err);
-	process.exit(1);
-});
+	main().catch((err) => {
+		console.error('Error:', err);
+		process.exit(1);
+	});
+}
+
+module.exports = { parseSelection, formatList };
