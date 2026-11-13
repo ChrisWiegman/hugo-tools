@@ -185,7 +185,7 @@ publish content/drafts/my-post.md later 2026-06-01
 
 - Sets `draft: false` and `date:` to now or 08:00 on the scheduled date (in your configured timezone)
 - Moves the file to `content/posts/YYYY/MM-DD-slug.md`
-- Short posts (under 200 words) without categories are treated as notes and moved to `content/notes/` instead
+- Short posts (under 350 words) with no categories, or only the `Personal` category, are treated as notes and moved to `content/notes/` instead
 - Warns if the draft already had a different `date:` value
 
 **Requirements for posts** (not notes):
@@ -267,9 +267,9 @@ import-books path/to/goodreads_library_export.csv [--covers] [--refresh-asins]
 
 - Creates `content/books/<author-slug>/<title-slug>.md` for each book on your "read" shelf
 - Front matter includes title, author, star rating, finish date(s), links to Amazon, Open Library, and Goodreads, a `reference: { isbn, asin }` block, and a `cover` field
-- Any Goodreads review text becomes the file body
+- Any Goodreads review text becomes the file body, with its HTML line breaks and bold/italic tags converted to Markdown
 - Safe to re-run: existing files are matched by Goodreads ID or ISBN, finish dates are merged, and unchanged files are skipped
-- If a book's title changed in Goodreads, the file is renamed automatically
+- If a book's title changed in Goodreads, the file is renamed automatically — unless another file already exists at the new path, in which case it's updated in place and a warning is printed
 - `reference.isbn`/`reference.asin` are backfilled onto existing files that are missing them — a value already in the file (e.g. entered by hand) is never overwritten
 
 **Re-reads:** Goodreads' CSV export only ever contains the *most recent* "Date Read" for a book, even when its "Read Count" shows it was finished more than once. So if you re-read a book, the next export will carry the new completion date and it's automatically added to `finished` — nothing is ever overwritten or removed, dates only accumulate. What the export can't give you is *earlier* read dates for a book you'd already read more than once before you started tracking it here. When "Read Count" is higher than the number of dates already on file, the import prints a line like:
