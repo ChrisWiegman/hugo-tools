@@ -12,6 +12,29 @@ const config = require('./config');
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
 
+/** Year and zero-padded month of `date` in the given IANA timezone. */
+function yearMonthIn(timeZone, date = new Date()) {
+	const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit' }).formatToParts(date);
+	const get = (type) => parts.find((p) => p.type === type).value;
+
+	return { year: get('year'), month: get('month') };
+}
+
+/**
+ * Move a file, falling back to copy + delete when the source is on a different
+ * filesystem (rename fails with EXDEV, e.g. images on an external drive).
+ */
+function moveFile(src, dest, fsImpl = fs) {
+	try {
+		fsImpl.renameSync(src, dest);
+	} catch (err) {
+		if (err.code !== 'EXDEV') throw err;
+
+		fsImpl.copyFileSync(src, dest, fs.constants.COPYFILE_EXCL);
+		fsImpl.unlinkSync(src);
+	}
+}
+
 function urlFromImagesDir(imagesDir, year, month, filename) {
 	const urlBase = imagesDir.replace(/^assets\//, '');
 
@@ -142,9 +165,7 @@ if (require.main === module) {
 		process.exit(1);
 	}
 
-	const now = new Date();
-	const year = now.getFullYear().toString();
-	const month = String(now.getMonth() + 1).padStart(2, '0');
+	const { year, month } = yearMonthIn(config.timezone);
 	const filename = path.basename(imageFile);
 	const destDir = path.join(process.cwd(), config.imagesDir, year, month);
 	const destFile = path.join(destDir, filename);
@@ -158,7 +179,7 @@ if (require.main === module) {
 			process.exit(1);
 		}
 
-		fs.renameSync(imageFile, destFile);
+		moveFile(imageFile, destFile);
 		console.log(`Moved to: ${destFile}`);
 	}
 
@@ -185,4 +206,4 @@ if (require.main === module) {
 	console.log(`Updated: ${path.relative(process.cwd(), contentFile)}`);
 }
 
-module.exports = { urlFromImagesDir, appendMarkdown, insertImage, copyToClipboard };
+module.exports = { urlFromImagesDir, appendMarkdown, insertImage, copyToClipboard, yearMonthIn, moveFile };

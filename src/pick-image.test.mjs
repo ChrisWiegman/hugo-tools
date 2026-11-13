@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { urlFromImagesDir, appendMarkdown, insertImage, copyToClipboard } = require('./pick-image.js');
+const { urlFromImagesDir, appendMarkdown, insertImage, copyToClipboard, yearMonthIn, moveFile } = require('./pick-image.js');
 
 // ---------------------------------------------------------------------------
 // urlFromImagesDir
@@ -201,4 +204,60 @@ test('copyToClipboard: returns false when no tool works', () => {
 	const { exec } = recordingExec(['clip']);
 
 	assert.equal(copyToClipboard('/a.png', { platform: 'win32', exec }), false);
+});
+
+// ---------------------------------------------------------------------------
+// yearMonthIn
+// ---------------------------------------------------------------------------
+
+test('yearMonthIn: uses the configured timezone, not the machine timezone', () => {
+	// 03:00 UTC on Jan 1 is still Dec 31 in Chicago
+	const date = new Date('2026-01-01T03:00:00Z');
+
+	assert.deepEqual(yearMonthIn('America/Chicago', date), { year: '2025', month: '12' });
+	assert.deepEqual(yearMonthIn('Asia/Tokyo', date), { year: '2026', month: '01' });
+});
+
+// ---------------------------------------------------------------------------
+// moveFile
+// ---------------------------------------------------------------------------
+
+test('moveFile: renames within the same filesystem', () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pick-image-'));
+	const src = path.join(dir, 'a.jpg');
+	const dest = path.join(dir, 'b.jpg');
+
+	fs.writeFileSync(src, 'img');
+	moveFile(src, dest);
+	assert.equal(fs.existsSync(src), false);
+	assert.equal(fs.readFileSync(dest, 'utf8'), 'img');
+	fs.rmSync(dir, { recursive: true });
+});
+
+test('moveFile: falls back to copy + delete on EXDEV', () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pick-image-'));
+	const src = path.join(dir, 'a.jpg');
+	const dest = path.join(dir, 'b.jpg');
+	const crossDevice = {
+		...fs,
+		renameSync() {
+			throw Object.assign(new Error('cross-device link not permitted'), { code: 'EXDEV' });
+		},
+	};
+
+	fs.writeFileSync(src, 'img');
+	moveFile(src, dest, crossDevice);
+	assert.equal(fs.existsSync(src), false);
+	assert.equal(fs.readFileSync(dest, 'utf8'), 'img');
+	fs.rmSync(dir, { recursive: true });
+});
+
+test('moveFile: rethrows other errors', () => {
+	const failing = {
+		renameSync() {
+			throw Object.assign(new Error('denied'), { code: 'EACCES' });
+		},
+	};
+
+	assert.throws(() => moveFile('a', 'b', failing), /denied/);
 });
