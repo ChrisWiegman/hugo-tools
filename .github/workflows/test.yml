@@ -9,7 +9,7 @@ on:
   workflow_call:
 
 concurrency:
-    group: ${{ github.workflow }}
+    group: ${{ github.workflow }}-${{ github.ref }}
     cancel-in-progress: true
 
 permissions:
@@ -32,5 +32,5 @@ jobs:
             - name: Install dependencies
               run: npm ci --include=optional
 
-            - name: Run book script tests
+            - name: Run tests
               run: npm run test
