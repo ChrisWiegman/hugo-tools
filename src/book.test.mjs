@@ -34,6 +34,7 @@ import {
 	toFrontMatter,
 	buildExistingIndex,
 	findExistingFile,
+	planWrite,
 	lookupAsinFromOpenLibrary,
 	lookupAsinFromGoogleBooks,
 	lookupAsinFromAmazonPa,
@@ -1563,5 +1564,34 @@ test('isMainModule: false for a different file or missing argv[1]', async () => 
 	await fs.writeFile(other, '');
 	assert.equal(isMainModule(pathToFileURL(file).href, other), false);
 	assert.equal(isMainModule(pathToFileURL(file).href, undefined), false);
+	await fs.rm(dir, { recursive: true });
+});
+
+// ---------------------------------------------------------------------------
+// planWrite
+// ---------------------------------------------------------------------------
+
+test('planWrite: same path writes in place', async () => {
+	assert.deepEqual(await planWrite('/x/a.md', '/x/a.md'), { targetPath: '/x/a.md', rename: false, conflict: false });
+});
+
+test('planWrite: renames when the new path is free', async () => {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'book-plan-'));
+	const oldPath = path.join(dir, 'old.md');
+	const newPath = path.join(dir, 'new.md');
+
+	await fs.writeFile(oldPath, '');
+	assert.deepEqual(await planWrite(oldPath, newPath), { targetPath: newPath, rename: true, conflict: false });
+	await fs.rm(dir, { recursive: true });
+});
+
+test('planWrite: never overwrites a different file at the new path', async () => {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'book-plan-'));
+	const oldPath = path.join(dir, 'old.md');
+	const newPath = path.join(dir, 'new.md');
+
+	await fs.writeFile(oldPath, '');
+	await fs.writeFile(newPath, 'another book');
+	assert.deepEqual(await planWrite(oldPath, newPath), { targetPath: oldPath, rename: false, conflict: true });
 	await fs.rm(dir, { recursive: true });
 });

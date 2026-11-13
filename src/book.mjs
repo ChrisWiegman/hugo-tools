@@ -921,6 +921,20 @@ async function findExistingFile(b, outPath, index) {
 }
 
 /**
+ * Decide where an updated existing file should be written. A file matched at a
+ * different path than the current title's slug is renamed — unless something already
+ * lives at the new path, in which case it's updated in place so the other file is
+ * never overwritten.
+ */
+async function planWrite(existingPath, outPath) {
+	if (existingPath === outPath) return { targetPath: existingPath, rename: false, conflict: false };
+
+	if (await fileExists(outPath)) return { targetPath: existingPath, rename: false, conflict: true };
+
+	return { targetPath: outPath, rename: true, conflict: false };
+}
+
+/**
  * Remove a directory if it is empty (best-effort; ignores errors).
  */
 async function removeIfEmpty(dirPath) {
@@ -1232,7 +1246,16 @@ async function main() {
 				patched = updateTitleInFrontMatter(patched, b.title);
 			}
 
-			if (titleChanged) {
+			const plan = await planWrite(existingPath, outPath);
+
+			if (plan.conflict) {
+				console.warn(
+					`  WARNING: ${path.relative(OUTPUT_ROOT, existingPath)} should be renamed to ` +
+					`${path.relative(OUTPUT_ROOT, outPath)}, but that file already exists — updated in place instead.`,
+				);
+			}
+
+			if (plan.rename) {
 				// Write to new path, remove old path, clean up empty author dir
 				await fs.mkdir(path.dirname(outPath), { recursive: true });
 				await fs.writeFile(outPath, patched, 'utf8');
@@ -1393,6 +1416,7 @@ export {
 	toFrontMatter,
 	buildExistingIndex,
 	findExistingFile,
+	planWrite,
 	lookupAsinFromOpenLibrary,
 	lookupAsinFromGoogleBooks,
 	lookupAsinFromAmazonPa,
