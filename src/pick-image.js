@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync, execFileSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const config = require('./config');
 
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
@@ -90,34 +90,31 @@ function insertImage(content, urlPath) {
 	return restore(rewriteImagesField(lines, imagesIdx, urlPath).join('\n'));
 }
 
-function copyToClipboard(text) {
-	const platform = process.platform;
-
-	if (platform === 'darwin') {
-		execSync(`echo ${JSON.stringify(text)} | pbcopy`);
-		return;
-	}
-
-	if (platform === 'win32') {
-		execFileSync('clip', { input: text });
-		return;
-	}
-
-	const tools = [
+/**
+ * Copy text to the system clipboard. Commands are run with execFileSync and the text
+ * passed on stdin — never through a shell — so filenames can't inject commands.
+ * Returns true on success.
+ */
+function copyToClipboard(text, { platform = process.platform, exec = execFileSync } = {}) {
+	const candidates = {
+		darwin: [['pbcopy', []]],
+		win32: [['clip', []]],
+	}[platform] || [
 		['xclip', ['-selection', 'clipboard']],
 		['xsel', ['--clipboard', '--input']],
 		['wl-copy', []],
 	];
 
-	for (const [cmd, args] of tools) {
+	for (const [cmd, args] of candidates) {
 		try {
-			execFileSync(cmd, args, { input: text });
-			return;
+			exec(cmd, args, { input: text, stdio: ['pipe', 'ignore', 'ignore'] });
+			return true;
 		} catch {
 			// try next
 		}
 	}
-	console.log('(clipboard unavailable — copy the path above manually)');
+
+	return false;
 }
 
 if (require.main === module) {
@@ -166,8 +163,13 @@ if (require.main === module) {
 	}
 
 	if (!contentFile) {
-		copyToClipboard(urlPath);
-		console.log(`Path copied to clipboard: ${urlPath}`);
+		if (copyToClipboard(urlPath)) {
+			console.log(`Path copied to clipboard: ${urlPath}`);
+		} else {
+			console.log(`Path: ${urlPath}`);
+			console.log('(clipboard unavailable — copy the path above manually)');
+		}
+
 		process.exit(0);
 	}
 
@@ -183,4 +185,4 @@ if (require.main === module) {
 	console.log(`Updated: ${path.relative(process.cwd(), contentFile)}`);
 }
 
-module.exports = { urlFromImagesDir, appendMarkdown, insertImage };
+module.exports = { urlFromImagesDir, appendMarkdown, insertImage, copyToClipboard };

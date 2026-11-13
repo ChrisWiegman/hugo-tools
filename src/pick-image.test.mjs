@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { urlFromImagesDir, appendMarkdown, insertImage } = require('./pick-image.js');
+const { urlFromImagesDir, appendMarkdown, insertImage, copyToClipboard } = require('./pick-image.js');
 
 // ---------------------------------------------------------------------------
 // urlFromImagesDir
@@ -165,4 +165,40 @@ test('insertImage: preserves CRLF line endings', () => {
 	const result = insertImage('---\r\nimages:\r\n  -\r\n---\r\nbody', '/images/a.jpg');
 
 	assert.equal(result, '---\r\nimages:\r\n  - /images/a.jpg\r\n---\r\nbody');
+});
+
+// ---------------------------------------------------------------------------
+// copyToClipboard
+// ---------------------------------------------------------------------------
+
+function recordingExec(failFor = []) {
+	const calls = [];
+	const exec = (cmd, args, opts) => {
+		calls.push({ cmd, args, input: opts.input });
+
+		if (failFor.includes(cmd)) throw new Error('not found');
+	};
+
+	return { calls, exec };
+}
+
+test('copyToClipboard: macOS passes text to pbcopy on stdin, not through a shell', () => {
+	const { calls, exec } = recordingExec();
+	const text = '/images/2026/05/$(touch pwned)"`x`.png';
+
+	assert.equal(copyToClipboard(text, { platform: 'darwin', exec }), true);
+	assert.deepEqual(calls, [{ cmd: 'pbcopy', args: [], input: text }]);
+});
+
+test('copyToClipboard: Linux falls through to the next available tool', () => {
+	const { calls, exec } = recordingExec(['xclip']);
+
+	assert.equal(copyToClipboard('/a.png', { platform: 'linux', exec }), true);
+	assert.deepEqual(calls.map((c) => c.cmd), ['xclip', 'xsel']);
+});
+
+test('copyToClipboard: returns false when no tool works', () => {
+	const { exec } = recordingExec(['clip']);
+
+	assert.equal(copyToClipboard('/a.png', { platform: 'win32', exec }), false);
 });
