@@ -20,7 +20,7 @@
   "author": "Chris Wiegman <contact@chriswiegman.com>",
   "type": "commonjs",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "publishConfig": {
     "access": "public"

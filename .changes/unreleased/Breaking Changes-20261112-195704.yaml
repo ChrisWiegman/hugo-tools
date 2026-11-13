@@ -1,0 +1,3 @@
+kind: Breaking Changes
+body: Node.js 20 or later is now required; Node 18 is end-of-life. CI now runs the test suite on both Node 20 and the current LTS.
+time: 2026-11-12T19:57:04.929503-06:00

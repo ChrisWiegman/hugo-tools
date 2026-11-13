@@ -6,7 +6,7 @@ A collection of CLI tools for Hugo bloggers. Run them directly from the root of 
 
 ## Requirements
 
-- Node.js 18 or later
+- Node.js 20 or later
 
 ## Installation
 

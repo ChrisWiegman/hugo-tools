@@ -55,7 +55,7 @@
  *   import-books path/to/goodreads.csv [--covers] [--refresh-asins]
  *
  * Notes:
- * - This script uses global fetch (Node 18+).
+ * - This script uses global fetch (Node 20+).
  */
 
 import fs from 'node:fs/promises';
