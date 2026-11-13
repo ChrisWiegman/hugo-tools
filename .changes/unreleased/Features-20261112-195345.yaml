@@ -1,3 +1,0 @@
-kind: Features
-body: import-books no longer re-queries Open Library and Google Books on every run for books that have no ASIN. Pass --refresh-asins to retry those lookups.
-time: 2026-11-12T19:53:45.623642-06:00

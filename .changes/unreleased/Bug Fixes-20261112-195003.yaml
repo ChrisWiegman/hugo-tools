@@ -1,3 +1,0 @@
-kind: Bug Fixes
-body: Fixed extract-tags dropping the last tag or category when the list ends the front matter, and added support for inline lists, single-value scalars, and CRLF line endings.
-time: 2026-11-12T19:50:03.156855-06:00

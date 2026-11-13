@@ -1,3 +1,0 @@
-kind: Bug Fixes
-body: pick-image now files images under the year/month of the configured timezone, like the other commands, and can move images from a different drive.
-time: 2026-11-12T19:56:14.617327-06:00

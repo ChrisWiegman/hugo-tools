@@ -1,3 +1,0 @@
-kind: Bug Fixes
-body: Fixed the optional Amazon Product Advertising API ASIN lookup, which used GetItems with an ISBN (not a supported item ID type) and so never returned a result. It now uses SearchItems against the Books index.
-time: 2026-11-12T19:52:09.577265-06:00

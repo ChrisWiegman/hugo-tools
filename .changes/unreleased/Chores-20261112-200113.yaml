@@ -1,3 +1,0 @@
-kind: Chores
-body: Rewrote the README to cover every command, flag, and setting, use the hugo- prefixed command names throughout, and fix a package.json scripts example that used the reserved npm publish script name.
-time: 2026-11-12T20:01:13.389558-06:00
