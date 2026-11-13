@@ -59,33 +59,27 @@
  */
 
 import fs from 'node:fs/promises';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { createHash, createHmac } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 // -------------------- Config --------------------
 
 const PROJECT_ROOT = process.cwd();
 
-let _userConfig = {};
+// Shared with the CommonJS tools so .hugo-tools.json is read (and validated) in one place.
+const config = createRequire(import.meta.url)('./config.js');
 
-try {
-	const cfgPath = path.join(PROJECT_ROOT, '.hugo-tools.json');
-
-	if (existsSync(cfgPath)) {
-		_userConfig = JSON.parse(readFileSync(cfgPath, 'utf8'));
-	}
-} catch {} // eslint-disable-line no-empty
-
-const OUTPUT_ROOT = path.join(PROJECT_ROOT, _userConfig.booksDir ?? 'content/books');
+const OUTPUT_ROOT = path.join(PROJECT_ROOT, config.booksDir);
 
 // Optional Amazon Product Advertising API credentials for ASIN lookup fallback.
 // Set via .hugo-tools.json: { "amazonPaApi": { "accessKey", "secretKey", "partnerTag" } }
-const AMAZON_PA_CONFIG = _userConfig.amazonPaApi ?? null;
+const AMAZON_PA_CONFIG = config.amazonPaApi ?? null;
 
 // Project-relative directory cover art is saved under. Set via .hugo-tools.json: { "coversDir" }
-const COVERS_DIR = _userConfig.coversDir ?? 'assets/images/books';
+const COVERS_DIR = config.coversDir;
 
 // -------------------- Utilities --------------------
 
@@ -1009,17 +1003,29 @@ function toFrontMatter({ title, author, rating, finished, links, reference, cove
 
 // -------------------- Main --------------------
 
-const HUGO_CONFIGS = [
-	'hugo.toml', 'hugo.yaml', 'hugo.yml', 'hugo.json',
-	'config.toml', 'config.yaml', 'config.yml', 'config.json',
-	'config',
-];
+/**
+ * Bump the `date:` in the library page's front matter so Hugo shows it as updated.
+ * Returns 'updated', or 'missing' when the file doesn't exist (nothing to do).
+ */
+async function updateLibraryDate(libraryPath, now = new Date()) {
+	let content;
+
+	try {
+		content = await fs.readFile(libraryPath, 'utf8');
+	} catch (err) {
+		if (err.code === 'ENOENT') return 'missing';
+
+		throw err;
+	}
+
+	const stamp = now.toISOString().replace(/\.\d{3}Z$/, '+00:00');
+
+	await fs.writeFile(libraryPath, content.replace(/^date:.*$/m, `date: ${stamp}`), 'utf8');
+	return 'updated';
+}
 
 async function main() {
-	if (!HUGO_CONFIGS.some((name) => existsSync(path.join(PROJECT_ROOT, name)))) {
-		process.stderr.write('Error: no Hugo config file found. Run this command from the root of your Hugo site.\n');
-		process.exit(1);
-	}
+	config.requireHugoSite();
 
 	const argv = process.argv.slice(2);
 	const withCovers = argv.includes('--covers');
@@ -1371,21 +1377,15 @@ async function main() {
 		}
 	}
 
-	if (written > 0) {
-		const libraryPath = path.join(PROJECT_ROOT, 'content', 'library.md');
+	if (written > 0 && config.libraryFile) {
+		const libraryPath = path.join(PROJECT_ROOT, config.libraryFile);
 
 		try {
-			const libraryContent = await fs.readFile(libraryPath, 'utf8');
-			const now = new Date().toISOString().replace(/\.\d{3}Z$/, '+00:00');
-			const updated = libraryContent.replace(
-				/^date:.*$/m,
-				`date: ${now}`,
-			);
-
-			await fs.writeFile(libraryPath, updated, 'utf8');
-			console.log(`  Updated library.md date to ${now}`);
+			if (await updateLibraryDate(libraryPath) === 'updated') {
+				console.log(`  Updated ${config.libraryFile} date`);
+			}
 		} catch (err) {
-			console.warn(`  WARNING: could not update library.md: ${err.message}`);
+			console.warn(`  WARNING: could not update ${config.libraryFile}: ${err.message}`);
 		}
 	}
 
@@ -1470,4 +1470,5 @@ export {
 	fetchGoogleBooksCover,
 	fetchBookCover,
 	saveCover,
+	updateLibraryDate,
 };

@@ -10,6 +10,8 @@ const DEFAULTS = {
 	notesDir: 'content/notes',
 	booksDir: 'content/books',
 	imagesDir: 'assets/images',
+	coversDir: 'assets/images/books',
+	libraryFile: 'content/library.md',
 	vscodeDir: '.vscode',
 };
 

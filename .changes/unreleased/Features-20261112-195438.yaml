@@ -1,0 +1,3 @@
+kind: Features
+body: Added a libraryFile setting for the page import-books updates after an import (default content/library.md). A missing library page is now skipped quietly instead of warning on every run, and import-books now reads .hugo-tools.json through the shared config loader, so it warns about invalid JSON like the other commands.
+time: 2026-11-12T19:54:38.305008-06:00

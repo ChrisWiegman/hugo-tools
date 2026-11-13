@@ -94,11 +94,12 @@ Or create `.hugo-tools.json` manually:
   "booksDir": "content/books",
   "imagesDir": "assets/images",
   "coversDir": "assets/images/books",
+  "libraryFile": "content/library.md",
   "vscodeDir": ".vscode"
 }
 ```
 
-All fields are optional. Shown values are the defaults.
+All fields are optional. Shown values are the defaults. `libraryFile` is the page whose `date:` `import-books` bumps after writing books; it's skipped if the file doesn't exist, and setting it to `""` turns the update off.
 
 ---
 

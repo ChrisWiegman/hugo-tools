@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 import {
 	isMainModule,
+	updateLibraryDate,
 	slugify,
 	cleanIsbn,
 	toISODate,
@@ -1659,4 +1660,22 @@ test('withTimeout: keeps a caller-supplied signal and other options', async () =
 
 test('lookupAsinFromOpenLibrary: a timed-out request yields an empty string', async () => {
 	assert.equal(await lookupAsinFromOpenLibrary('9781234567890', withTimeout(hangingFetch(), 20)), '');
+});
+
+// ---------------------------------------------------------------------------
+// updateLibraryDate
+// ---------------------------------------------------------------------------
+
+test('updateLibraryDate: rewrites the date line', async () => {
+	const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'book-lib-'));
+	const file = path.join(dir, 'library.md');
+
+	await fs.writeFile(file, '---\ntitle: "Library"\ndate: 2020-01-01\n---\nBody\n');
+	assert.equal(await updateLibraryDate(file, new Date('2026-11-12T10:00:00.000Z')), 'updated');
+	assert.equal(await fs.readFile(file, 'utf8'), '---\ntitle: "Library"\ndate: 2026-11-12T10:00:00+00:00\n---\nBody\n');
+	await fs.rm(dir, { recursive: true });
+});
+
+test('updateLibraryDate: reports a missing file without throwing', async () => {
+	assert.equal(await updateLibraryDate(path.join(os.tmpdir(), 'hugo-tools-no-such-library.md')), 'missing');
 });
