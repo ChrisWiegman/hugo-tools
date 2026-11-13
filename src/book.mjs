@@ -257,6 +257,22 @@ function needsReReadDates(readCount, finishedCount) {
 	return Number.isFinite(readCount) && readCount > 1 && finishedCount < readCount;
 }
 
+/**
+ * Goodreads exports reviews as HTML fragments: `<br />` for line breaks (`<br /><br />`
+ * between paragraphs) plus <b>/<i> emphasis. Hugo strips raw HTML by default, which would
+ * collapse paragraphs, so convert those to Markdown.
+ */
+function reviewToMarkdown(review) {
+	return String(review ?? '')
+		.replace(/\r\n/g, '\n')
+		.replace(/<br\s*\/?>/gi, '\n')
+		.replace(/<\/?(?:b|strong)>/gi, '**')
+		.replace(/<\/?(?:i|em)>/gi, '*')
+		.replace(/[ \t]+\n/g, '\n')
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
+}
+
 function goodreadsBookUrl(bookId) {
 	return bookId ? `https://www.goodreads.com/book/show/${bookId}` : '';
 }
@@ -1146,7 +1162,7 @@ async function main() {
 		importedRows++;
 
 		const rating = clampRating(Number(String(row[iRating] || '').trim() || 0));
-		const review = String(row[iReview] || '').trim();
+		const review = reviewToMarkdown(row[iReview]);
 		const readCount = Number(String(row[iReadCount] || '').trim() || 0);
 
 		const isbn10 = cleanIsbn(row[iIsbn]);
@@ -1480,6 +1496,7 @@ export {
 	keyFor,
 	needsReReadDates,
 	stripBOM,
+	reviewToMarkdown,
 	goodreadsBookUrl,
 	openLibraryIsbnUrl,
 	amazonSearchLink,

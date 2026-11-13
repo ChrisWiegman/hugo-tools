@@ -1,0 +1,3 @@
+kind: Features
+body: import-books now converts Goodreads review HTML (line breaks, bold, italics) to Markdown so paragraph breaks survive Hugo's default HTML stripping.
+time: 2026-11-12T19:55:35.778103-06:00

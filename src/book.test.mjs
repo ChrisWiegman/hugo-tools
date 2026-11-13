@@ -18,6 +18,7 @@ import {
 	keyFor,
 	needsReReadDates,
 	stripBOM,
+	reviewToMarkdown,
 	goodreadsBookUrl,
 	openLibraryIsbnUrl,
 	amazonSearchLink,
@@ -1710,4 +1711,29 @@ test('upsertCoverInFrontMatter: inserts into front matter even when the body has
 	const md = `---\ntitle: "x"\n---\n${BODY_LOOKALIKES}`;
 
 	assert.equal(upsertCoverInFrontMatter(md, '/c.jpg'), `---\ntitle: "x"\ncover: "/c.jpg"\n---\n${BODY_LOOKALIKES}`);
+});
+
+// ---------------------------------------------------------------------------
+// reviewToMarkdown
+// ---------------------------------------------------------------------------
+
+test('reviewToMarkdown: turns <br /> pairs into paragraph breaks', () => {
+	assert.equal(reviewToMarkdown('First para.<br /><br />Second para.'), 'First para.\n\nSecond para.');
+});
+
+test('reviewToMarkdown: handles single breaks and all br spellings', () => {
+	assert.equal(reviewToMarkdown('a<br>b<br/>c<BR />d'), 'a\nb\nc\nd');
+});
+
+test('reviewToMarkdown: collapses runs of breaks and trims', () => {
+	assert.equal(reviewToMarkdown('<br />a <br /><br /><br /><br />b<br />'), 'a\n\nb');
+});
+
+test('reviewToMarkdown: converts bold and italic tags', () => {
+	assert.equal(reviewToMarkdown('<b>loved</b> it, <i>really</i>'), '**loved** it, *really*');
+});
+
+test('reviewToMarkdown: empty input stays empty', () => {
+	assert.equal(reviewToMarkdown(''), '');
+	assert.equal(reviewToMarkdown(undefined), '');
 });
