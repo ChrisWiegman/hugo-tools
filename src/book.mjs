@@ -280,6 +280,18 @@ function amazonSearchLink({ isbn13, isbn10, title, author }) {
 
 // -------------------- ASIN lookup --------------------
 
+const FETCH_TIMEOUT_MS = 15000;
+
+/**
+ * Wrap a fetch implementation so every request aborts after `ms` unless the caller
+ * supplied its own signal. Keeps one stalled API from hanging the whole import.
+ */
+function withTimeout(fetchImpl, ms) {
+	return (url, opts = {}) => fetchImpl(url, { ...opts, signal: opts.signal ?? AbortSignal.timeout(ms) });
+}
+
+const timedFetch = withTimeout((url, opts) => fetch(url, opts), FETCH_TIMEOUT_MS);
+
 function sleep(ms) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -288,7 +300,7 @@ function sleep(ms) {
  * Open Library sometimes exposes an "amazon" identifier on an edition, which
  * for Kindle editions is the ASIN.
  */
-async function lookupAsinFromOpenLibrary(isbn, fetchImpl = fetch) {
+async function lookupAsinFromOpenLibrary(isbn, fetchImpl = timedFetch) {
 	if (!isbn) return '';
 
 	try {
@@ -310,7 +322,7 @@ async function lookupAsinFromOpenLibrary(isbn, fetchImpl = fetch) {
  * Google Books occasionally lists a non-ISBN "OTHER" industry identifier that
  * matches the shape of an ASIN. Best-effort only — most volumes won't have one.
  */
-async function lookupAsinFromGoogleBooks(isbn, fetchImpl = fetch) {
+async function lookupAsinFromGoogleBooks(isbn, fetchImpl = timedFetch) {
 	if (!isbn) return '';
 
 	try {
@@ -359,7 +371,7 @@ function amazonPaApiSignature({ secretKey, region, service, dateStamp, stringToS
  * within the Books index instead. Only attempted when accessKey/secretKey/partnerTag
  * are configured.
  */
-async function lookupAsinFromAmazonPa(isbn, config, fetchImpl = fetch) {
+async function lookupAsinFromAmazonPa(isbn, config, fetchImpl = timedFetch) {
 	if (!isbn || !config?.accessKey || !config?.secretKey || !config?.partnerTag) return '';
 
 	const host = config.host || 'webservices.amazon.com';
@@ -424,7 +436,7 @@ async function lookupAsinFromAmazonPa(isbn, config, fetchImpl = fetch) {
  * Google Books) and falling back to the Amazon Product Advertising API only
  * when it's configured. Returns '' when no source has a match.
  */
-async function lookupAsin(isbn, amazonPaConfig, cache, fetchImpl = fetch) {
+async function lookupAsin(isbn, amazonPaConfig, cache, fetchImpl = timedFetch) {
 	if (!isbn) return '';
 
 	if (cache?.has(isbn)) return cache.get(isbn);
@@ -478,7 +490,7 @@ function coverUrlFromAssetPath(assetPath) {
  * ISBN. `default=false` makes it 404 instead of returning a placeholder when there's
  * no cover, so a non-OK response reliably means "no cover here."
  */
-async function fetchOpenLibraryCover(isbn, fetchImpl = fetch) {
+async function fetchOpenLibraryCover(isbn, fetchImpl = timedFetch) {
 	if (!isbn) return null;
 
 	try {
@@ -504,7 +516,7 @@ async function fetchOpenLibraryCover(isbn, fetchImpl = fetch) {
 /**
  * Fallback cover source: Google Books' volume thumbnail, used when Open Library has none.
  */
-async function fetchGoogleBooksCover(isbn, fetchImpl = fetch) {
+async function fetchGoogleBooksCover(isbn, fetchImpl = timedFetch) {
 	if (!isbn) return null;
 
 	try {
@@ -541,7 +553,7 @@ async function fetchGoogleBooksCover(isbn, fetchImpl = fetch) {
  * Look up cover art for an ISBN, trying Open Library first and Google Books second.
  * Returns null when neither source has one.
  */
-async function fetchBookCover(isbn, fetchImpl = fetch) {
+async function fetchBookCover(isbn, fetchImpl = timedFetch) {
 	if (!isbn) return null;
 
 	const openLibrary = await fetchOpenLibraryCover(isbn, fetchImpl);
@@ -1451,6 +1463,7 @@ export {
 	lookupAsinFromGoogleBooks,
 	lookupAsinFromAmazonPa,
 	lookupAsin,
+	withTimeout,
 	extFromContentType,
 	coverUrlFromAssetPath,
 	fetchOpenLibraryCover,

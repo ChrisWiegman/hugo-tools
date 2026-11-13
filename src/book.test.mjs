@@ -41,6 +41,7 @@ import {
 	lookupAsinFromGoogleBooks,
 	lookupAsinFromAmazonPa,
 	lookupAsin,
+	withTimeout,
 	extFromContentType,
 	coverUrlFromAssetPath,
 	fetchOpenLibraryCover,
@@ -1624,4 +1625,38 @@ test('shouldLookupAsin: retries when the ISBN changed or --refresh-asins is pass
 test('shouldLookupAsin: never looks up when an ASIN is set or there is no ISBN', () => {
 	assert.equal(shouldLookupAsin({ existingAsin: 'B00', existingIsbn: '123', finalIsbn: '123', referenceBlock: true, refresh: true }), false);
 	assert.equal(shouldLookupAsin({ existingAsin: '', existingIsbn: '', finalIsbn: '', referenceBlock: false, refresh: true }), false);
+});
+
+// ---------------------------------------------------------------------------
+// withTimeout
+// ---------------------------------------------------------------------------
+
+function hangingFetch() {
+	return (url, opts) => new Promise((resolve, reject) => {
+		opts.signal.addEventListener('abort', () => reject(opts.signal.reason));
+	});
+}
+
+test('withTimeout: aborts a request that never responds', async () => {
+	const start = Date.now();
+
+	await assert.rejects(withTimeout(hangingFetch(), 50)('https://example.test'), { name: 'TimeoutError' });
+	assert.ok(Date.now() - start < 2000);
+});
+
+test('withTimeout: keeps a caller-supplied signal and other options', async () => {
+	let seen;
+	const controller = new AbortController();
+	const wrapped = withTimeout(async (url, opts) => {
+		seen = opts;
+		return 'ok';
+	}, 50);
+
+	assert.equal(await wrapped('u', { method: 'POST', signal: controller.signal }), 'ok');
+	assert.equal(seen.signal, controller.signal);
+	assert.equal(seen.method, 'POST');
+});
+
+test('lookupAsinFromOpenLibrary: a timed-out request yields an empty string', async () => {
+	assert.equal(await lookupAsinFromOpenLibrary('9781234567890', withTimeout(hangingFetch(), 20)), '');
 });
